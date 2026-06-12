@@ -1,0 +1,39 @@
+# ==============================================================================
+# Talk to Your Data — Python Dependencies
+# ------------------------------------------------------------------------------
+# Tested with Python 3.10–3.11 (Anaconda environment on Windows).
+# Install with:  pip install -r requirements.txt
+# ==============================================================================
+
+# ---- Web UI ------------------------------------------------------------------
+streamlit==1.40.2                 # Chat interface, sidebar uploads, status UI
+
+# ---- LLM (answer generation) -------------------------------------------------
+langchain-groq==0.2.1             # ChatGroq — Groq-hosted LLMs (Llama 3.3 70B)
+
+# ---- Vector database (local, persistent) -------------------------------------
+chromadb==0.5.23                  # Local on-disk vector store
+
+# ---- LangChain (chunking, PDF loading, embedding wrappers) -------------------
+langchain==0.3.13                 # Core abstractions
+langchain-community==0.3.13       # PyPDFLoader + community integrations
+langchain-text-splitters==0.3.4   # RecursiveCharacterTextSplitter
+
+# ---- PDF parsing -------------------------------------------------------------
+pypdf==5.1.0                      # Backend used by PyPDFLoader for text extraction
+
+# ---- Embeddings: LOCAL default (no API key, runs offline) --------------------
+sentence-transformers==3.3.1      # Local embedding models (e.g. BAAI/bge-small-en-v1.5)
+
+# ---- Configuration & secrets -------------------------------------------------
+python-dotenv==1.0.1              # Load API keys from .env (never hardcode)
+pydantic==2.10.4                  # Typed, validated settings
+pydantic-settings==2.7.0          # .env -> Settings binding
+
+# ---- Embeddings: OPTIONAL API backends (only needed if selected via .env) ----
+# Uncomment the backend you intend to use; the local default needs neither.
+# voyageai==0.3.2                 # Voyage AI embeddings (voyage-3) — needs VOYAGE_API_KEY
+# openai==1.59.3                  # OpenAI embeddings (text-embedding-3-small) — needs OPENAI_API_KEY
+
+# ---- Testing -----------------------------------------------------------------
+pytest==8.3.4                     # Unit tests in tests/

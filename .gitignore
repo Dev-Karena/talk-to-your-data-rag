@@ -1,0 +1,67 @@
+# ==============================================================================
+# Talk to Your Data — Git ignore rules
+# ==============================================================================
+
+# ---- Secrets (CRITICAL: never commit real keys) ------------------------------
+.env
+.env.*
+!.env.example
+
+# ---- Generated data / runtime artifacts --------------------------------------
+# Ignore the contents of these dirs, but keep the folders themselves (.gitkeep)
+# so a fresh clone has the directory layout the app expects.
+chroma_db/*
+!chroma_db/.gitkeep
+documents/*
+!documents/.gitkeep
+*.log
+
+# ---- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Virtual environments ----------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+# Anaconda local env folders
+envs/
+
+# ---- Testing / coverage ------------------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ---- Caches ------------------------------------------------------------------
+# Hugging Face / sentence-transformers model cache (if kept inside the project)
+.cache/
+.huggingface/
+
+# ---- IDE / editor ------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- Claude Code (machine-local settings) ------------------------------------
+.claude/
+
+# ---- OS ----------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Streamlit ---------------------------------------------------------------
+.streamlit/secrets.toml
+
+models/
+
