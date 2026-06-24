@@ -115,6 +115,35 @@ class Settings(BaseSettings):
         validation_alias="TOP_K",
         description="Number of chunks to retrieve per question.",
     )
+    use_mmr: bool = Field(
+        default=True,
+        validation_alias="USE_MMR",
+        description=(
+            "Re-rank candidates with Maximal Marginal Relevance so the final "
+            "top-K spans multiple documents instead of collapsing onto the "
+            "single most-similar one (improves cross-document questions)."
+        ),
+    )
+    fetch_k: int = Field(
+        default=20,
+        ge=1,
+        validation_alias="FETCH_K",
+        description=(
+            "Size of the candidate pool fetched before MMR re-ranking. Larger "
+            "values give MMR more documents to diversify across. Ignored when "
+            "USE_MMR is false."
+        ),
+    )
+    mmr_lambda: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        validation_alias="MMR_LAMBDA",
+        description=(
+            "MMR trade-off in [0, 1]: 1.0 = pure relevance (no diversity), "
+            "0.0 = pure diversity. 0.5 balances both."
+        ),
+    )
 
     # ---- Vector store (ChromaDB) ---------------------------------------------
     chroma_persist_dir: Path = Field(

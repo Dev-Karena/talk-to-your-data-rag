@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, List, Set
+from typing import Dict, List, Tuple
 
 import chromadb
 from chromadb.config import Settings as ChromaClientSettings
@@ -180,6 +180,50 @@ class VectorStore:
             )
         return retrieved
 
+    def query_candidates(
+        self, query_embedding: List[float], fetch_k: int
+    ) -> List[Tuple[RetrievedChunk, List[float]]]:
+        """Return up to ``fetch_k`` similar chunks *paired with their vectors*.
+
+        Like :meth:`query`, but also returns each candidate's stored embedding
+        so a re-ranker (e.g. MMR in the retriever) can measure chunk-to-chunk
+        similarity. Use this when you intend to diversify a larger candidate
+        pool down to a smaller, cross-document result set.
+
+        Args:
+            query_embedding: The embedded query vector.
+            fetch_k: Size of the candidate pool to retrieve.
+
+        Returns:
+            ``(chunk, embedding)`` pairs ordered by descending similarity.
+            Empty if the collection has no documents.
+
+        Raises:
+            VectorStoreError: If the query fails.
+        """
+        if self._collection.count() == 0:
+            logger.warning("Candidate query attempted on an empty vector store.")
+            return []
+
+        try:
+            result = self._collection.query(
+                query_embeddings=[query_embedding],
+                n_results=fetch_k,
+                include=["documents", "metadatas", "distances", "embeddings"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Candidate search failed: {exc}") from exc
+
+        chunks = self._parse_query_result(result)
+        embeddings = (result.get("embeddings") or [[]])[0]
+        # Pair each parsed chunk with its vector; tolerate a short embeddings
+        # list defensively (should always align 1:1 with chunks).
+        paired: List[Tuple[RetrievedChunk, List[float]]] = []
+        for index, chunk in enumerate(chunks):
+            vector = list(embeddings[index]) if index < len(embeddings) else []
+            paired.append((chunk, vector))
+        return paired
+
     # ---- Deduplication & introspection --------------------------------------
     def document_exists(self, doc_hash: str) -> bool:
         """Return ``True`` if any chunk with the given document hash is stored.
@@ -213,6 +257,44 @@ class VectorStore:
             if doc_hash and doc_hash not in sources:
                 sources[doc_hash] = str(meta.get("source", "unknown"))
         return sources
+
+    def document_chunk_counts(self) -> Dict[str, Dict[str, object]]:
+        """Return a per-document summary of what is stored.
+
+        Aggregates every chunk's metadata into one entry per source document,
+        keyed by ``doc_hash``. Used by the inspection utility and the
+        multi-document validation tests to verify that *all* uploaded PDFs are
+        present (not just the first).
+
+        Returns:
+            Mapping of ``doc_hash`` to ``{"source": str, "chunk_count": int,
+            "pages": List[int]}`` (pages sorted ascending). Empty when the store
+            has no documents.
+
+        Raises:
+            VectorStoreError: If the underlying read fails.
+        """
+        try:
+            result = self._collection.get(include=["metadatas"])
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Failed to summarize documents: {exc}") from exc
+
+        summary: Dict[str, Dict[str, object]] = {}
+        for meta in result.get("metadatas") or []:
+            if not meta:
+                continue
+            doc_hash = str(meta.get("doc_hash", ""))
+            entry = summary.setdefault(
+                doc_hash,
+                {"source": str(meta.get("source", "unknown")), "chunk_count": 0, "pages": set()},
+            )
+            entry["chunk_count"] = int(entry["chunk_count"]) + 1
+            entry["pages"].add(int(meta.get("page_number", 0)))  # type: ignore[union-attr]
+
+        # Normalize the page sets into sorted lists for stable, JSON-friendly output.
+        for entry in summary.values():
+            entry["pages"] = sorted(entry["pages"])  # type: ignore[arg-type]
+        return summary
 
     def count(self) -> int:
         """Return the total number of stored chunks."""
