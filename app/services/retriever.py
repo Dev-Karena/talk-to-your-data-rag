@@ -21,11 +21,33 @@ from typing import List, Optional, Tuple
 
 from app.config.settings import get_settings
 from app.rag.embeddings import get_embedder
-from app.rag.vector_store import RetrievedChunk, get_vector_store
+from app.rag.query_rewriter import rewrite_query
+from app.rag.vector_store import RetrievedChunk, VectorStore, get_vector_store
 from app.utils.logger import get_logger
 from app.utils.timing import Stopwatch
 
 logger = get_logger(__name__)
+
+
+def _gather_candidates(
+    store: VectorStore, sub_embeddings: List[List[float]], fetch_k: int
+) -> List[Tuple[RetrievedChunk, List[float]]]:
+    """Fetch and merge candidate pools across one or more sub-query embeddings.
+
+    A single embedding returns the original pool unchanged (baseline). Multiple
+    embeddings (from query decomposition) are unioned by ``chunk_id`` keeping the
+    best score, then re-sorted — surfacing chunks each sub-query found best.
+    """
+    if len(sub_embeddings) == 1:
+        return store.query_candidates(sub_embeddings[0], fetch_k=fetch_k)
+
+    merged: dict[str, Tuple[RetrievedChunk, List[float]]] = {}
+    for vec in sub_embeddings:
+        for chunk, cvec in store.query_candidates(vec, fetch_k=fetch_k):
+            existing = merged.get(chunk.chunk_id)
+            if existing is None or chunk.score > existing[0].score:
+                merged[chunk.chunk_id] = (chunk, cvec)
+    return sorted(merged.values(), key=lambda cv: cv[0].score, reverse=True)
 
 
 def retrieve(question: str, top_k: Optional[int] = None) -> List[RetrievedChunk]:
@@ -54,38 +76,44 @@ def retrieve(question: str, top_k: Optional[int] = None) -> List[RetrievedChunk]
     settings = get_settings()
     k = top_k if top_k is not None else settings.top_k
 
-    # Time each stage for observability. The Stopwatch only measures the existing
-    # calls — it does not alter their inputs, order, or results.
+    # Time each stage for observability (Sprint 3). Timing does not alter results.
     sw = Stopwatch()
-
-    # 1. Embed the query (uses the same backend as document embedding so the
-    #    vectors live in a comparable space).
     embedder = get_embedder()
-    with sw.stage("embed"):
-        query_embedding = embedder.embed_query(question)
-
-    # 2. Similarity search against the persistent collection.
     store = get_vector_store()
 
+    # Non-MMR path: original single-query top-k (unchanged baseline). Query
+    # decomposition needs re-ranking to merge, so it only applies on the MMR path.
     if not settings.use_mmr:
+        with sw.stage("embed"):
+            query_embedding = embedder.embed_query(question)
         with sw.stage("search"):
             results = store.query(query_embedding, top_k=k)
         sw.log("retrieve(mmr=off)")
         logger.info("Retrieved %d chunk(s) (top_k=%d, mmr=off).", len(results), k)
         return results
 
-    # MMR path: over-fetch, then diversify down to k.
+    # 1. Query rewriting (Sprint 5). sub_queries[0] is always the original; with
+    #    QUERY_REWRITE_MODE=off this is a 1-element list and the path below is
+    #    byte-equivalent to the pre-Sprint-5 baseline.
+    sub_queries = rewrite_query(question, settings.query_rewrite_mode)
+
+    # 2. Embed each sub-query; the original's embedding drives MMR relevance.
+    with sw.stage("embed"):
+        sub_embeddings = [embedder.embed_query(sq) for sq in sub_queries]
+    query_embedding = sub_embeddings[0]
+
+    # 3. Over-fetch, then gather + merge candidates across sub-queries.
     fetch_k = max(settings.fetch_k, k)
     with sw.stage("search"):
-        candidates = store.query_candidates(query_embedding, fetch_k=fetch_k)
+        candidates = _gather_candidates(store, sub_embeddings, fetch_k)
+
+    # 4. Diversify down to k with MMR.
     with sw.stage("mmr"):
         results = _mmr_select(query_embedding, candidates, k, settings.mmr_lambda)
     sw.log("retrieve(mmr=on)")
     logger.info(
-        "Retrieved %d chunk(s) (top_k=%d, mmr=on, fetched=%d, sources=%d).",
-        len(results),
-        k,
-        len(candidates),
+        "Retrieved %d chunk(s) (top_k=%d, mmr=on, subq=%d, fetched=%d, sources=%d).",
+        len(results), k, len(sub_queries), len(candidates),
         len({c.source for c in results}),
     )
     return results

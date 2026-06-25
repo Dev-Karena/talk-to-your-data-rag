@@ -21,8 +21,9 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List
 
+from app.config.settings import get_settings
 from app.rag.vector_store import RetrievedChunk
 from app.utils.logger import get_logger
 
@@ -91,10 +92,26 @@ def build_context(chunks: List[RetrievedChunk]) -> AssembledContext:
         logger.info("No chunks to assemble; returning empty context.")
         return AssembledContext(context_text="", citations=[])
 
+    # Optionally group chunks under their source document (best document first),
+    # preserving each chunk's relative order within its document. This only
+    # reorders/labels the context — it does not change which chunks were
+    # retrieved. With the flag off, the original interleaved order is kept.
+    grouped = get_settings().group_context_by_document
+    if grouped:
+        chunks = _group_by_document(chunks)
+
     blocks: List[str] = []
     citations: List[SourceCitation] = []
+    last_source: str | None = None
 
     for position, chunk in enumerate(chunks, start=1):
+        # When grouping, announce each new document once so the model sees a
+        # clear per-document boundary (purely a context-formatting aid).
+        block = ""
+        if grouped and chunk.source != last_source:
+            block += f"=== Document: {chunk.source} ===\n"
+            last_source = chunk.source
+
         # The header makes provenance explicit to the model and pins the
         # citation number it should use in the answer.
         header = (
@@ -102,7 +119,7 @@ def build_context(chunks: List[RetrievedChunk]) -> AssembledContext:
             f"(document: {chunk.source}, page: {chunk.page_number}, "
             f"chunk: {chunk.chunk_index})"
         )
-        blocks.append(f"{header}\n{chunk.text}")
+        blocks.append(f"{block}{header}\n{chunk.text}")
 
         citations.append(
             SourceCitation(
@@ -120,3 +137,25 @@ def build_context(chunks: List[RetrievedChunk]) -> AssembledContext:
     context_text = "\n\n".join(blocks)
     logger.info("Assembled context from %d source(s).", len(citations))
     return AssembledContext(context_text=context_text, citations=citations)
+
+
+def _group_by_document(chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+    """Group chunks by source document, best document first, stable within a doc.
+
+    Document order is by each document's best (first-seen) chunk, so the most
+    relevant document leads. A chunk's position within its document is preserved
+    from the input (which is already in relevance order). Pure reordering — no
+    chunk is added or dropped.
+    """
+    order: List[str] = []
+    by_source: Dict[str, List[RetrievedChunk]] = {}
+    for chunk in chunks:
+        if chunk.source not in by_source:
+            by_source[chunk.source] = []
+            order.append(chunk.source)
+        by_source[chunk.source].append(chunk)
+
+    grouped: List[RetrievedChunk] = []
+    for source in order:
+        grouped.extend(by_source[source])
+    return grouped

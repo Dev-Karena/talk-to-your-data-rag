@@ -145,6 +145,33 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ---- Retrieval improvements (Sprint 5) -----------------------------------
+    # Reproduce the pre-Sprint-5 baseline with:
+    #   QUERY_REWRITE_MODE=off, GROUP_CONTEXT_BY_DOCUMENT=false
+    # Note: adaptive fetch_k and a per-document MMR cap were implemented and
+    # benchmarked in Sprint 5 but REMOVED — they showed no benefit and lowered
+    # precision/nDCG on the evaluation corpus (see docs/audit/sprint5-*).
+    query_rewrite_mode: str = Field(
+        default="heuristic",
+        validation_alias="QUERY_REWRITE_MODE",
+        description=(
+            "Query rewriting strategy: 'off' (use the query as-is), 'heuristic' "
+            "(decompose comparative/conjunctive questions into sub-queries and "
+            "merge their candidates — improves cross-document recall), or 'llm' "
+            "(configured but NOT yet enabled; falls back to heuristic)."
+        ),
+    )
+    group_context_by_document: bool = Field(
+        default=True,
+        validation_alias="GROUP_CONTEXT_BY_DOCUMENT",
+        description=(
+            "When assembling the LLM context, group retrieved chunks under their "
+            "source document (best document first) instead of interleaving them. "
+            "Improves readability/grounding for cross-document answers. Does not "
+            "change retrieval. False = baseline interleaved order."
+        ),
+    )
+
     # ---- Vector store (ChromaDB) ---------------------------------------------
     chroma_persist_dir: Path = Field(
         default=Path("./chroma_db"),
@@ -212,6 +239,17 @@ class Settings(BaseSettings):
         if normalized not in {"text", "json"}:
             raise ValueError(
                 f"LOG_FORMAT must be 'text' or 'json', got '{value}'."
+            )
+        return normalized
+
+    @field_validator("query_rewrite_mode")
+    @classmethod
+    def _validate_query_rewrite_mode(cls, value: str) -> str:
+        """Ensure the query-rewrite mode is recognized."""
+        normalized = value.strip().lower()
+        if normalized not in {"off", "heuristic", "llm"}:
+            raise ValueError(
+                f"QUERY_REWRITE_MODE must be 'off', 'heuristic', or 'llm', got '{value}'."
             )
         return normalized
 
