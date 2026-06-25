@@ -1,0 +1,9 @@
+# Streamlit runtime configuration.
+#
+# IMPORTANT (reliability): keep `maxUploadSize` aligned with MAX_FILE_SIZE_MB in
+# your .env (default 25). Streamlit enforces this limit at the HTTP layer BEFORE
+# a file ever reaches the app, so an oversize upload is rejected by the browser
+# widget instead of being read fully into memory and only then rejected by
+# validate_pdf(). If you raise MAX_FILE_SIZE_MB, raise this to match.
+[server]
+maxUploadSize = 25

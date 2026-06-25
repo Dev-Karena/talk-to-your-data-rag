@@ -18,6 +18,8 @@ Usage:
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -32,6 +34,11 @@ from app.utils.logger import get_logger
 from app.utils.validators import compute_content_hash, validate_pdf
 
 logger = get_logger(__name__)
+
+# Soft threshold: above this many chunks for a single document we log a warning
+# (very large in-limit PDFs index slowly and use more memory). Not a hard limit —
+# size is capped at validation time; this is observability for pathological docs.
+_LARGE_DOC_CHUNK_WARNING = 1500
 
 
 class IngestStatus(str, Enum):
@@ -132,13 +139,17 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
             message=f"Could not check existing index: {exc}",
         )
 
-    # 4. Persist the raw file, then run the load -> clean -> chunk -> embed ->
-    #    store pipeline. Any failure here is reported as FAILED.
+    # 4. Parse from a TEMP file first; only persist to documents/ after the PDF
+    #    parses and chunks successfully. This keeps corrupt/unusable uploads out
+    #    of the documents directory so they can't poison a later re-index.
+    tmp_path: str | None = None
     try:
-        file_path = _persist_to_disk(source_name, data, doc_hash)
+        fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+        with os.fdopen(fd, "wb") as tmp_file:
+            tmp_file.write(data)
 
-        # Load
-        pages = load_pdf(file_path, source_name=source_name)
+        # Load (from the temp file)
+        pages = load_pdf(tmp_path, source_name=source_name)
 
         # Clean (page by page; drop pages that become empty after cleaning)
         cleaned_pages = [
@@ -153,6 +164,17 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
         chunks = chunk_pages(cleaned_pages, doc_hash=doc_hash)
         if not chunks:
             raise PDFLoadError("Chunking produced no chunks.")
+
+        # Observability for unusually large in-limit documents (Row 9).
+        if len(chunks) > _LARGE_DOC_CHUNK_WARNING:
+            logger.warning(
+                "Large document '%s': %d chunks across %d page(s) — indexing may "
+                "be slow and memory-intensive.",
+                source_name, len(chunks), len(cleaned_pages),
+            )
+
+        # The document is valid: persist the original bytes for re-indexing.
+        _persist_to_disk(source_name, data, doc_hash)
 
         # Embed
         embedder = get_embedder()
@@ -179,6 +201,13 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
             chunk_count=0,
             message=f"Unexpected error: {exc}",
         )
+    finally:
+        # Always remove the scratch parse file, success or failure.
+        if tmp_path is not None:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                logger.debug("Could not remove temp file '%s'.", tmp_path)
 
     logger.info("Indexed '%s': %d chunk(s).", source_name, len(chunks))
     return IngestResult(

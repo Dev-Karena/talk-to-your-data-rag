@@ -12,7 +12,8 @@ from typing import Iterator, List
 
 import pytest
 
-from app.rag.vector_store import RetrievedChunk
+from app.rag.embeddings import EmbeddingError
+from app.rag.vector_store import RetrievedChunk, VectorStoreError
 from app.services import rag_service
 from app.services.llm_client import LLMError
 
@@ -49,10 +50,47 @@ class _FakeLLM:
             yield token + " "
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, chunks: List[RetrievedChunk], llm: _FakeLLM) -> None:
-    """Patch the retriever and LLM client used by the service."""
-    monkeypatch.setattr(rag_service, "retrieve", lambda q, top_k=None: chunks)
+class _FakeSettings:
+    """Minimal settings stand-in exposing only what the service reads."""
+
+    def __init__(self, groq_api_key: str = "test-key") -> None:
+        self.groq_api_key = groq_api_key
+
+
+class _FakeStore:
+    """Minimal vector-store stand-in exposing only ``count()``."""
+
+    def __init__(self, count: int = 1) -> None:
+        self._count = count
+
+    def count(self) -> int:
+        return self._count
+
+
+def _patch(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: List[RetrievedChunk],
+    llm: _FakeLLM,
+    *,
+    groq_api_key: str = "test-key",
+    store_count: int = 1,
+    retrieve_error: Exception | None = None,
+) -> None:
+    """Patch the retriever, LLM client, settings, and store used by the service.
+
+    Keeps tests hermetic: the service now also reads ``get_settings`` (for the
+    API key) and ``get_vector_store`` (to distinguish an empty index), so both
+    are stubbed here.
+    """
+    if retrieve_error is not None:
+        def _raise(_q: str, top_k: object = None):  # noqa: ANN001
+            raise retrieve_error
+        monkeypatch.setattr(rag_service, "retrieve", _raise)
+    else:
+        monkeypatch.setattr(rag_service, "retrieve", lambda q, top_k=None: chunks)
     monkeypatch.setattr(rag_service, "get_llm_client", lambda: llm)
+    monkeypatch.setattr(rag_service, "get_settings", lambda: _FakeSettings(groq_api_key))
+    monkeypatch.setattr(rag_service, "get_vector_store", lambda: _FakeStore(store_count))
 
 
 # ---- Blocking variant --------------------------------------------------------
@@ -139,3 +177,63 @@ def test_stream_llm_error_yields_message(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "error" in text.lower()
     # Citations were resolved before generation, so they are still returned.
     assert len(citations) == 1
+
+
+# ---- Sprint 2 reliability: scenarios 4, 6, 7 --------------------------------
+# (Scenario 5 "empty query" is covered above; scenarios 1/3/8 live in
+#  test_validators.py and test_pipeline_reliability.py.)
+
+def test_query_before_indexing_says_no_documents(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 4: querying an EMPTY index tells the user to upload first."""
+    _patch(monkeypatch, [], _FakeLLM(), store_count=0)
+    result = rag_service.answer_question("anything")
+    assert "no documents" in result.answer.lower()
+    assert result.used_context is False
+    assert result.citations == []
+
+
+def test_no_match_with_documents_says_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 4 (counterpart): a populated index that misses says 'not found'."""
+    _patch(monkeypatch, [], _FakeLLM(), store_count=5)
+    result = rag_service.answer_question("anything")
+    assert "could not find" in result.answer.lower()
+
+
+def test_missing_api_key_returns_specific_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 6: no GROQ_API_KEY -> specific, actionable message; no LLM call."""
+    chunks = [_chunk(1, 0.9)]
+    _patch(monkeypatch, chunks, _FakeLLM(raise_error=True), groq_api_key="")
+    result = rag_service.answer_question("a question")
+    assert "groq_api_key" in result.answer.lower()
+    assert result.error == "GROQ_API_KEY is not set."
+
+
+def test_missing_api_key_stream_returns_specific_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 6 (stream): missing key yields the actionable message, not a crash."""
+    chunks = [_chunk(1, 0.9)]
+    _patch(monkeypatch, chunks, _FakeLLM(raise_error=True), groq_api_key="")
+    tokens, citations = rag_service.answer_question_stream("a question")
+    assert "groq_api_key" in "".join(tokens).lower()
+
+
+def test_retrieval_error_is_handled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 7: a corrupted store (VectorStoreError) yields a friendly message."""
+    _patch(
+        monkeypatch, [], _FakeLLM(),
+        retrieve_error=VectorStoreError("simulated corrupt store"),
+    )
+    result = rag_service.answer_question("a question")
+    assert result.error is not None
+    assert "system error" in result.answer.lower()
+    assert result.used_context is False
+
+
+def test_retrieval_error_stream_is_handled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scenario 7 (stream): retrieval failure yields a message instead of a crash."""
+    _patch(
+        monkeypatch, [], _FakeLLM(),
+        retrieve_error=EmbeddingError("simulated embedding backend down"),
+    )
+    tokens, citations = rag_service.answer_question_stream("a question")
+    assert "system error" in "".join(tokens).lower()
+    assert citations == []

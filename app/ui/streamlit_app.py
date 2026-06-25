@@ -22,7 +22,7 @@ import streamlit as st
 
 from app.config.settings import get_settings
 from app.rag.pipeline import IngestResult, ingest_document
-from app.rag.vector_store import get_vector_store
+from app.rag.vector_store import VectorStore, VectorStoreError, get_vector_store
 from app.services.rag_service import answer_question_stream
 from app.ui.components import (
     render_citations,
@@ -45,6 +45,21 @@ def _init_page() -> None:
     if "messages" not in st.session_state:
         # Each message: {"role": str, "content": str, "citations": list}
         st.session_state.messages = []
+
+
+def _get_store_or_error() -> VectorStore | None:
+    """Return the vector store, or show an error and return ``None`` if it can't
+    be opened (e.g. a corrupted Chroma database). Never raises into the page."""
+    try:
+        return get_vector_store()
+    except VectorStoreError as exc:
+        st.error(
+            "Could not open the vector database. It may be missing or corrupted. "
+            "Use 'Clear DB' to reset it, or check the application logs.\n\n"
+            f"Details: {exc}"
+        )
+        logger.error("Vector store unavailable in UI: %s", exc)
+        return None
 
 
 def _render_environment_status() -> None:
@@ -83,7 +98,9 @@ def _reindex_from_disk() -> List[IngestResult]:
         Per-file ingestion results.
     """
     settings = get_settings()
-    store = get_vector_store()
+    store = _get_store_or_error()
+    if store is None:
+        return []
     store.clear()
 
     results: List[IngestResult] = []
@@ -133,10 +150,11 @@ def _render_sidebar() -> None:
 
         st.divider()
 
-        # Live store status.
-        store = get_vector_store()
-        sources = store.list_sources()
-        render_indexed_documents(sources, store.count())
+        # Live store status (guarded: a corrupted DB shows an error, not a crash).
+        store = _get_store_or_error()
+        if store is not None:
+            sources = store.list_sources()
+            render_indexed_documents(sources, store.count())
 
         st.divider()
 
@@ -151,9 +169,11 @@ def _render_sidebar() -> None:
                     st.info("No stored PDFs to re-index.")
         with col_b:
             if st.button("🗑️ Clear DB", use_container_width=True, help="Delete all indexed data."):
-                get_vector_store().clear()
-                st.session_state.messages = []
-                st.success("Vector database cleared.")
+                clear_store = _get_store_or_error()
+                if clear_store is not None:
+                    clear_store.clear()
+                    st.session_state.messages = []
+                    st.success("Vector database cleared.")
 
 
 def _render_history() -> None:
