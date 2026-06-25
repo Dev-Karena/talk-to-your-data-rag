@@ -1,0 +1,160 @@
+# Retrieval benchmark dataset — Sprint 4 (Option A: real textbook corpus).
+#
+# Ground truth is keyed on doc_hash (collision-proof); expected_sources are for
+# human-readable reports only. The corpus fingerprint pins this dataset to the
+# exact indexed corpus produced by scripts/build_benchmark_corpus.py.
+#
+# Case types:
+#   single         - answer lives in exactly one textbook
+#   cross_document - question genuinely spans two textbooks (coverage tested)
+#   negative       - not covered by any textbook (no abstention threshold exists,
+#                    so these report the top similarity score for inspection)
+
+corpus:
+  description: "Real ML / OS / DBMS textbooks (Option A canonical corpus)"
+  expected_doc_hashes:
+    - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"  # ML.pdf   (120p, 379 chunks)
+    - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"  # OS.pdf   (133p, 289 chunks)
+    - "112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"  # DBMS.pdf (232p, 463 chunks)
+
+cases:
+  # ---------------- Machine Learning (single) ----------------
+  - id: ml-01
+    query: "What is supervised learning?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-02
+    query: "How does gradient descent minimize a loss function?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-03
+    query: "What is overfitting and how is it prevented?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-04
+    query: "How does a neural network learn through backpropagation?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-05
+    query: "What is the difference between classification and regression?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-06
+    query: "What is unsupervised learning and clustering?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+  - id: ml-07
+    query: "What is the bias-variance tradeoff?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+
+  # ---------------- Operating Systems (single) ----------------
+  - id: os-01
+    query: "How does the operating system schedule processes on the CPU?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-02
+    query: "What is virtual memory and how does paging work?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-03
+    query: "What is a deadlock and how can it be avoided?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-04
+    query: "How do semaphores provide process synchronization?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-05
+    query: "What is the difference between a process and a thread?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-06
+    query: "How does a context switch between processes work?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+  - id: os-07
+    query: "What are page replacement algorithms?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+
+  # ---------------- Databases (single) ----------------
+  - id: db-01
+    query: "What are the ACID properties of a transaction?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+  - id: db-02
+    query: "What is database normalization?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+  - id: db-03
+    query: "How does a B-tree index speed up queries?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+  - id: db-04
+    query: "What is a SQL join and what types exist?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+  - id: db-05
+    query: "How does concurrency control use locking?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+  - id: db-06
+    query: "What is the relational model of data?"
+    type: single
+    expected_sources: ["DBMS.pdf"]
+    expected_doc_hashes: ["112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"]
+
+  # ---------------- Cross-document (coverage) ----------------
+  - id: xdoc-01
+    query: "How is concurrency controlled in operating systems versus databases?"
+    type: cross_document
+    expected_sources: ["OS.pdf", "DBMS.pdf"]
+    expected_doc_hashes:
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+      - "112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"
+  - id: xdoc-02
+    query: "Compare neural network training in machine learning with query optimization in databases."
+    type: cross_document
+    expected_sources: ["ML.pdf", "DBMS.pdf"]
+    expected_doc_hashes:
+      - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"
+      - "112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"
+  - id: xdoc-03
+    query: "How do machine learning models and operating system schedulers both make decisions?"
+    type: cross_document
+    expected_sources: ["ML.pdf", "OS.pdf"]
+    expected_doc_hashes:
+      - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+
+  # ---------------- Negative (out-of-corpus) ----------------
+  - id: neg-01
+    query: "What is the capital of France?"
+    type: negative
+    expected_sources: []
+    expected_doc_hashes: []
+  - id: neg-02
+    query: "What ingredients are in a chocolate chip cookie recipe?"
+    type: negative
+    expected_sources: []
+    expected_doc_hashes: []
