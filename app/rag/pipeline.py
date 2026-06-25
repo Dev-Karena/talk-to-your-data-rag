@@ -31,6 +31,7 @@ from app.rag.embeddings import get_embedder
 from app.rag.loader import PDFLoadError, PageDocument, load_pdf
 from app.rag.vector_store import get_vector_store
 from app.utils.logger import get_logger
+from app.utils.timing import Stopwatch
 from app.utils.validators import compute_content_hash, validate_pdf
 
 logger = get_logger(__name__)
@@ -143,25 +144,29 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
     #    parses and chunks successfully. This keeps corrupt/unusable uploads out
     #    of the documents directory so they can't poison a later re-index.
     tmp_path: str | None = None
+    sw = Stopwatch()  # observability: stage timings only, no behavior change
     try:
         fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
         with os.fdopen(fd, "wb") as tmp_file:
             tmp_file.write(data)
 
         # Load (from the temp file)
-        pages = load_pdf(tmp_path, source_name=source_name)
+        with sw.stage("load"):
+            pages = load_pdf(tmp_path, source_name=source_name)
 
         # Clean (page by page; drop pages that become empty after cleaning)
-        cleaned_pages = [
-            PageDocument(source=p.source, page_number=p.page_number, text=cleaned)
-            for p in pages
-            if (cleaned := clean_text(p.text))
-        ]
+        with sw.stage("clean"):
+            cleaned_pages = [
+                PageDocument(source=p.source, page_number=p.page_number, text=cleaned)
+                for p in pages
+                if (cleaned := clean_text(p.text))
+            ]
         if not cleaned_pages:
             raise PDFLoadError("Document contained no usable text after cleaning.")
 
         # Chunk
-        chunks = chunk_pages(cleaned_pages, doc_hash=doc_hash)
+        with sw.stage("chunk"):
+            chunks = chunk_pages(cleaned_pages, doc_hash=doc_hash)
         if not chunks:
             raise PDFLoadError("Chunking produced no chunks.")
 
@@ -178,10 +183,12 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
 
         # Embed
         embedder = get_embedder()
-        embeddings = embedder.embed_documents([c.text for c in chunks])
+        with sw.stage("embed"):
+            embeddings = embedder.embed_documents([c.text for c in chunks])
 
         # Store
-        store.add_chunks(chunks, embeddings)
+        with sw.stage("store"):
+            store.add_chunks(chunks, embeddings)
 
     except PDFLoadError as exc:
         logger.warning("Ingestion of '%s' failed: %s", source_name, exc)
@@ -209,6 +216,7 @@ def ingest_document(source_name: str, data: bytes) -> IngestResult:
             except OSError:
                 logger.debug("Could not remove temp file '%s'.", tmp_path)
 
+    sw.log(f"ingest('{source_name}')")
     logger.info("Indexed '%s': %d chunk(s).", source_name, len(chunks))
     return IngestResult(
         source=source_name,

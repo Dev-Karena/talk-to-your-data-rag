@@ -181,6 +181,15 @@ class Settings(BaseSettings):
         validation_alias="LOG_FILE",
         description="Path to the log file.",
     )
+    log_format: str = Field(
+        default="text",
+        validation_alias="LOG_FORMAT",
+        description=(
+            "Log output format: 'text' (default, human-readable) or 'json' "
+            "(structured, one JSON object per line for log aggregation). "
+            "Observability-only — does not change what is logged."
+        ),
+    )
 
     # ---- Validators ----------------------------------------------------------
     @field_validator("log_level")
@@ -192,6 +201,17 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError(
                 f"LOG_LEVEL must be one of {sorted(allowed)}, got '{value}'."
+            )
+        return normalized
+
+    @field_validator("log_format")
+    @classmethod
+    def _validate_log_format(cls, value: str) -> str:
+        """Ensure the log format is 'text' or 'json'."""
+        normalized = value.strip().lower()
+        if normalized not in {"text", "json"}:
+            raise ValueError(
+                f"LOG_FORMAT must be 'text' or 'json', got '{value}'."
             )
         return normalized
 

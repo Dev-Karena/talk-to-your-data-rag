@@ -12,7 +12,10 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import uuid
+from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
@@ -30,9 +33,66 @@ _BACKUP_COUNT = 3
 # Track configured logger names so handlers are attached only once per process.
 _configured_loggers: set[str] = set()
 
+# Per-operation correlation id, set via set_correlation_id(); threads a single id
+# across the log lines of one logical operation (e.g. a query: embed -> search ->
+# generate). Default "-" means "not in a correlated operation".
+_correlation_id: ContextVar[str] = ContextVar("correlation_id", default="-")
+
+
+def set_correlation_id(value: str) -> None:
+    """Set the correlation id for the current context (and its log lines)."""
+    _correlation_id.set(value)
+
+
+def get_correlation_id() -> str:
+    """Return the current correlation id ('-' if none is set)."""
+    return _correlation_id.get()
+
+
+def new_correlation_id(prefix: str = "op") -> str:
+    """Generate, set, and return a short correlation id for a new operation."""
+    cid = f"{prefix}-{uuid.uuid4().hex[:8]}"
+    set_correlation_id(cid)
+    return cid
+
+
+class _CorrelationIdFilter(logging.Filter):
+    """Inject the current correlation id onto every record as ``correlation_id``."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.correlation_id = get_correlation_id()
+        return True
+
+
+class _JsonFormatter(logging.Formatter):
+    """Render a log record as a single-line JSON object (structured logging).
+
+    Emits stable top-level keys (time, level, logger, message, correlation_id)
+    plus exception text when present. This changes only the *encoding* of the
+    same events — not what gets logged.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "time": self.formatTime(record, _DATE_FORMAT),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "correlation_id": getattr(record, "correlation_id", "-"),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
 
 def _build_formatter() -> logging.Formatter:
-    """Create the shared log formatter."""
+    """Create the shared log formatter based on the configured LOG_FORMAT.
+
+    Defaults to the human-readable text format; JSON is opt-in and leaves the
+    default output unchanged.
+    """
+    if get_settings().log_format == "json":
+        return _JsonFormatter()
     return logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT)
 
 
@@ -96,6 +156,9 @@ def get_logger(name: str) -> logging.Logger:
     logger.setLevel(level)
     # Don't propagate to the root logger; we manage our own handlers.
     logger.propagate = False
+
+    # Inject the correlation id onto every record (surfaced in JSON output).
+    logger.addFilter(_CorrelationIdFilter())
 
     logger.addHandler(_build_console_handler(level, formatter))
 

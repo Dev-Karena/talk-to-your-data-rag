@@ -140,3 +140,25 @@ def test_clear_empties_store(store) -> None:
     assert store.count() == 1
     store.clear()
     assert store.count() == 0
+
+
+def test_all_records_returns_ids_and_metadata(store) -> None:
+    """all_records() exposes ids + metadata for diagnostics (read-only)."""
+    store.add_chunks(
+        [
+            _make_chunk("h1::p1::c0", "a", "h1"),
+            _make_chunk("h2::p1::c0", "b", "h2"),
+        ],
+        [_VEC_A, _VEC_B],
+    )
+    records = store.all_records()
+    assert set(records.keys()) == {"ids", "metadatas"}
+    assert set(records["ids"]) == {"h1::p1::c0", "h2::p1::c0"}
+    assert len(records["metadatas"]) == 2
+    assert all("doc_hash" in m for m in records["metadatas"])
+
+
+def test_all_records_empty_store(store) -> None:
+    """all_records() on an empty store returns empty aligned lists."""
+    records = store.all_records()
+    assert records == {"ids": [], "metadatas": []}

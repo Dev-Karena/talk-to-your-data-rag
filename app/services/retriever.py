@@ -23,6 +23,7 @@ from app.config.settings import get_settings
 from app.rag.embeddings import get_embedder
 from app.rag.vector_store import RetrievedChunk, get_vector_store
 from app.utils.logger import get_logger
+from app.utils.timing import Stopwatch
 
 logger = get_logger(__name__)
 
@@ -53,23 +54,33 @@ def retrieve(question: str, top_k: Optional[int] = None) -> List[RetrievedChunk]
     settings = get_settings()
     k = top_k if top_k is not None else settings.top_k
 
+    # Time each stage for observability. The Stopwatch only measures the existing
+    # calls — it does not alter their inputs, order, or results.
+    sw = Stopwatch()
+
     # 1. Embed the query (uses the same backend as document embedding so the
     #    vectors live in a comparable space).
     embedder = get_embedder()
-    query_embedding = embedder.embed_query(question)
+    with sw.stage("embed"):
+        query_embedding = embedder.embed_query(question)
 
     # 2. Similarity search against the persistent collection.
     store = get_vector_store()
 
     if not settings.use_mmr:
-        results = store.query(query_embedding, top_k=k)
+        with sw.stage("search"):
+            results = store.query(query_embedding, top_k=k)
+        sw.log("retrieve(mmr=off)")
         logger.info("Retrieved %d chunk(s) (top_k=%d, mmr=off).", len(results), k)
         return results
 
     # MMR path: over-fetch, then diversify down to k.
     fetch_k = max(settings.fetch_k, k)
-    candidates = store.query_candidates(query_embedding, fetch_k=fetch_k)
-    results = _mmr_select(query_embedding, candidates, k, settings.mmr_lambda)
+    with sw.stage("search"):
+        candidates = store.query_candidates(query_embedding, fetch_k=fetch_k)
+    with sw.stage("mmr"):
+        results = _mmr_select(query_embedding, candidates, k, settings.mmr_lambda)
+    sw.log("retrieve(mmr=on)")
     logger.info(
         "Retrieved %d chunk(s) (top_k=%d, mmr=on, fetched=%d, sources=%d).",
         len(results),

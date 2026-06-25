@@ -296,6 +296,29 @@ class VectorStore:
             entry["pages"] = sorted(entry["pages"])  # type: ignore[arg-type]
         return summary
 
+    def all_records(self) -> Dict[str, List]:
+        """Return every stored chunk's id and metadata (read-only diagnostic).
+
+        Used by the diagnostic CLIs (metadata-health and inspection) to scan the
+        *actual* persisted state of the collection. Does not fetch embeddings or
+        documents, so it stays cheap.
+
+        Returns:
+            ``{"ids": [...], "metadatas": [...]}`` aligned by index. Empty lists
+            when the collection has no documents.
+
+        Raises:
+            VectorStoreError: If the underlying read fails.
+        """
+        try:
+            result = self._collection.get(include=["metadatas"])
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Failed to read records: {exc}") from exc
+        return {
+            "ids": list(result.get("ids") or []),
+            "metadatas": list(result.get("metadatas") or []),
+        }
+
     def count(self) -> int:
         """Return the total number of stored chunks."""
         return self._collection.count()
