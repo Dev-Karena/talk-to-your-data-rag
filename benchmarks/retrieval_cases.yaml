@@ -147,6 +147,52 @@ cases:
       - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"
       - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
 
+  # ---------------- Conjunctive (Sprint 5.x) ----------------
+  # "A and B" with no comparative cue. conj-01/02 span two documents (coverage);
+  # conj-03 is single-doc and guards against over-splitting hurting precision.
+  - id: conj-01
+    query: "Explain virtual memory and database normalization"
+    type: cross_document
+    expected_sources: ["OS.pdf", "DBMS.pdf"]
+    expected_doc_hashes:
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+      - "112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"
+  - id: conj-02
+    query: "Describe gradient descent and CPU scheduling"
+    type: cross_document
+    expected_sources: ["ML.pdf", "OS.pdf"]
+    expected_doc_hashes:
+      - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+  - id: conj-03
+    query: "What are semaphores and deadlocks?"
+    type: single
+    expected_sources: ["OS.pdf"]
+    expected_doc_hashes: ["d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"]
+
+  # ---------------- Multi-part (Sprint 5.x) ----------------
+  # Several questions in one prompt. mp-01/02 span two documents (coverage);
+  # mp-03 is single-doc and guards against over-splitting hurting precision.
+  - id: mp-01
+    query: "What are the ACID properties of a transaction? Also, how does paging work?"
+    type: cross_document
+    expected_sources: ["DBMS.pdf", "OS.pdf"]
+    expected_doc_hashes:
+      - "112115c810a1f47f517033e8d80d1c3d64e645a5ea384215f1f9414f78e85dd8"
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+  - id: mp-02
+    query: "Explain supervised learning. How do operating systems schedule processes?"
+    type: cross_document
+    expected_sources: ["ML.pdf", "OS.pdf"]
+    expected_doc_hashes:
+      - "defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"
+      - "d466b1706c4ebfff7d3070882562a0d458b4be06b5202aed3108b6b8e49eb0c8"
+  - id: mp-03
+    query: "What is overfitting? How does gradient descent minimize a loss function?"
+    type: single
+    expected_sources: ["ML.pdf"]
+    expected_doc_hashes: ["defd579186e4502ac8213d4e1cb12e8341ecb4a19128796120ec1f1ccf69516f"]
+
   # ---------------- Negative (out-of-corpus) ----------------
   - id: neg-01
     query: "What is the capital of France?"
