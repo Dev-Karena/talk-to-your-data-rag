@@ -2,9 +2,10 @@
 
 > **Handoff document.** Written for a developer (including future-me) with **no
 > memory of prior work**. Everything needed to continue without re-reading old
-> chats is here. Last updated against commit `97d355f` on branch
-> `sprint5x-conjunctive-multipart` (Sprint 5.x — not yet merged to `main`; `main`
-> tip is `b7abec5`).
+> chats is here. Sprint 5.x is now **merged** to `main` (`d2beb03`). Last updated
+> on branch `sprint6-reranker` (Sprint 6/6.x — cross-encoder re-ranking
+> **investigated and REMOVED**: no strategy held cross-doc Recall@4 = 1.000.
+> Investigation preserved at `ebec16e`; branch tip is clean. **Not merged.**).
 
 ---
 
@@ -187,6 +188,30 @@
   classes are **correctness insurance for harder corpora**, not a present-day
   metric win. The guard is what prevents single-doc "...and how is it prevented?"
   questions from over-splitting.
+
+## Sprint 6 + 6.x — Cross-encoder re-ranking (INVESTIGATED & REMOVED)
+* **Goal:** lift Hit@1 / MRR / Source Accuracy with an optional cross-encoder
+  re-ranker, preserving Recall@4 and **cross-document Recall@4 = 1.000**.
+* **Investigated three integration strategies** (all on branch `sprint6-reranker`,
+  preserved in history at commit `ebec16e`): `post_mmr` (A: rerank MMR top-N),
+  `pre_mmr` (B1: rerank pool → MMR), `mmr_relevance` (B2: cross-encoder scores as
+  the MMR relevance term).
+* **Result: REMOVED entirely.** No strategy held cross-doc Recall@4 = 1.000:
+  post_mmr & pre_mmr → **0.9286**, mmr_relevance → **0.8571** (B2 worst — its
+  peaked scores overpower MMR's diversity penalty). post_mmr maxed Hit@1/MRR
+  (→1.000) but failed the cross-doc guardrail. Per the Sprint-6.x rule ("if no
+  strategy satisfies the criteria, remove the reranker entirely"), all reranker
+  code/config/tests/scripts were deleted; the branch tip is clean.
+* **Latency (for the record):** warm CPU rerank of ~10 candidates **median
+  36.4 ms** (<150 ms target). Correctness, not latency, was the blocker. No usable
+  GPU here (torch is `+cpu`; `auto`→cpu).
+* **Lessons:** A relevance-only cross-encoder is the **wrong tool when
+  cross-document recall is a hard requirement** — it scores each chunk against the
+  full question, so for comparative questions the dominant document's chunks
+  out-rank the second document's single relevant chunk, whether reranking is last,
+  a pre-filter, or fused into MMR. Deterministic, not HNSW noise. The remaining
+  single-doc ranking miss (`db-03`) is better tackled by **BM25/hybrid** (next).
+  Full record: `docs/audit/sprint6-reranker-report.md`.
 
 ---
 
@@ -380,12 +405,11 @@ the retriever has **no abstention threshold** (always returns top-k).
 
 # Recommended Next Action
 
-**First: decide on Sprint 5.x.** Branch `sprint5x-conjunctive-multipart`
-(`97d355f`) is committed but **not merged**. Review the precision −0.0086
-trade-off (within HNSW noise) and either merge it to `main` or revert the new
-benchmark cases. Then:
+**Sprint 6 (reranker) is closed — REMOVED.** All three integration strategies
+(post_mmr, pre_mmr, mmr_relevance) regressed cross-doc Recall@4 below 1.000, so the
+reranker was deleted (investigation preserved at `ebec16e`). Nothing to merge.
 
-**Start Sprint 6: lexical recall (BM25) + hybrid search** — but first do the
+**Next step — Sprint 7: lexical recall (BM25) + hybrid search** — but first do the
 **5-minute corpus hygiene** that unblocks everything:
 
 1. Run `python scripts/collision_audit.py`, then **delete the 3 synthetic
@@ -404,15 +428,13 @@ recall; the remaining misses are **exact-term/precision** problems BM25 addresse
 
 # Git Status Recommendation
 
-* **Working tree:** Sprint 5.x committed on branch
-  `sprint5x-conjunctive-multipart` (`97d355f`), **not yet merged or pushed**.
-  `main` tip is `b7abec5`. `SESSION_SUMMARY.md` / `PROJECT_ROADMAP.md` updates are
-  uncommitted on the branch.
-* **To land Sprint 5.x:**
-  ```bash
-  git checkout main && git merge --no-ff sprint5x-conjunctive-multipart
-  git push origin main
-  ```
+* **Working tree:** Sprint 5.x is **merged & pushed** to `main` (`d2beb03`).
+  Sprint 6 (reranker) was investigated on branch `sprint6-reranker` and **removed**
+  — the investigation is preserved at commit `ebec16e`, the removal at the branch
+  tip. **Not merged, not pushed.** `main` stays at `d2beb03` (no reranker), which
+  is correct — the feature failed its acceptance criteria.
+* **Sprint 6 branch:** nothing to merge. Keep `sprint6-reranker` for the audit
+  trail or delete it; `main` is the intended state.
 * **Branches:** `sprint3-4-observability-eval` and `sprint5-retrieval-improvements`
   are fully merged into `main` and can be deleted:
   ```bash
@@ -441,9 +463,11 @@ Sprint 3 added structured logging, timing, and read-only diagnostics; Sprint 4 b
 a real retrieval-evaluation harness with `doc_hash` ground truth and an isolated
 benchmark corpus; Sprint 5 closed the cross-document gap via heuristic query
 decomposition (cross-doc Recall@4 **0.833 → 1.000**, overall Recall@4 **→ 1.000**,
-no regressions). Sprint 5.x (branch, unmerged) extended the rewriter to a 4-class
-classifier (conjunctive + multi-part). `main` is at `b7abec5`; the Sprint 5.x
-branch is `97d355f`; **125 tests pass**.
+no regressions). Sprint 5.x extended the rewriter to a 4-class classifier
+(conjunctive + multi-part) and is **merged** to `main` (`d2beb03`). Sprint 6
+investigated a cross-encoder reranker (three strategies) but **removed it** — every
+strategy regressed cross-document Recall@4 below 1.000, failing the hard rule.
+`main` stays at `d2beb03` (no reranker). **125 tests pass.**
 
 **Maturity level.** **Mid/solid.** Production-grade error handling, diagnostics,
 and an automated benchmark put it well past prototype. It is **not yet** advanced

@@ -2,7 +2,7 @@
 
 > Living roadmap. Tracks what shipped, what's in flight, and what's next.
 > Companion to `SESSION_SUMMARY.md` (detailed handoff state). Last updated for
-> **Sprint 5.x** (branch `sprint5x-conjunctive-multipart`, `97d355f`).
+> **Sprint 6** (branch `sprint6-reranker`; Sprint 5.x merged at `d2beb03`).
 
 A local, citation-grounded RAG app over user PDFs: Streamlit → `rag_service` →
 retriever + context builder + Groq generation; ingestion pipeline → Chroma. Fully
@@ -19,12 +19,12 @@ offline except answer generation. Embeddings: local BGE. Vector DB: ChromaDB.
 | 3 | Observability & diagnostics | ✅ Done | `343a269` |
 | 4 | Retrieval evaluation framework | ✅ Done | `7881641` |
 | 5 | Cross-document retrieval (decomposition) | ✅ Done | `b7abec5` |
-| 5.x | Conjunctive & multi-part decomposition | 🔶 Done, **unmerged** | `sprint5x-conjunctive-multipart` `97d355f` |
-| 6 | Lexical recall (BM25) + hybrid search | ⬜ Planned | — |
-| 7 | Cross-encoder reranking | ⬜ Planned | — |
+| 5.x | Conjunctive & multi-part decomposition | ✅ Done | `d2beb03` (merged) |
+| 6 / 6.x | Cross-encoder reranking (3 strategies) | ❌ Investigated & **removed** (failed acceptance) | `sprint6-reranker` (audit only, unmerged) |
+| 7 | Lexical recall (BM25) + hybrid search | ⬜ Planned | — |
 | 8 | Answer-quality evaluation | ⬜ Planned | — |
 
-Legend: ✅ merged to `main` · 🔶 in flight · ⬜ not started.
+Legend: ✅ merged to `main` · 🔶 in flight / unmerged · ❌ tried & removed · ⬜ not started.
 
 ---
 
@@ -54,46 +54,48 @@ Cross-doc Recall@4 **0.833 → 1.000**, overall Recall@4 **→ 1.000**, zero
 regression. Adaptive fetch_k and per-doc MMR cap were tried and **removed** (hurt
 precision). LLM rewrite path wired but disabled.
 
+### Sprint 5.x — Conjunctive & multi-part decomposition (merged `d2beb03`)
+Rewriter extended from 2 to 4 classes (`single | comparative | conjunctive |
+multi_part`) via `classify()`, with an `_is_topic` guard so clausal "and" doesn't
+over-split. Benchmark grew 25 → 31 cases; Recall@4 → 1.000, cross-doc → 1.000,
+Precision@4 −0.0086 (within HNSW noise). *Lesson: on this corpus MMR already
+covers the new cross-doc cases — the new classes are correctness insurance for
+harder corpora.*
+
 ---
 
-## In flight
+## Recently closed
 
-### Sprint 5.x — Conjunctive & multi-part decomposition 🔶
-**Branch `sprint5x-conjunctive-multipart` (`97d355f`) — committed, not merged.**
+### Sprint 6 / 6.x — Cross-encoder reranking ❌ removed
+Investigated three MMR + cross-encoder integrations and **removed all of them** —
+none held cross-document Recall@4 = 1.000.
 
-Extends the rewriter from 2 classes to 4: `single | comparative | conjunctive |
-multi_part`, via a public `classify()` (precedence `multi_part > comparative >
-conjunctive > single`). Conjunctive splitting is gated by an `_is_topic` guard so
-clausal "and" doesn't over-split single-doc questions. `retriever.py` unchanged;
-adaptive fetch_k stays removed. Benchmark grew 25 → 31 cases.
+| Strategy | Hit@1 | MRR | Cross-doc Recall@4 |
+|---|---|---|---|
+| MMR (`main`) | 0.9655 | 0.9770 | **1.0000** |
+| post_mmr (A) | 1.0000 | 1.0000 | 0.9286 ❌ |
+| pre_mmr (B1) | 0.9655 | 0.9828 | 0.9286 ❌ |
+| mmr_relevance (B2) | 0.9310 | 0.9655 | 0.8571 ❌ |
 
-**Benchmark (31 cases, off vs heuristic):** Recall@4 0.983 → **1.000**, cross-doc
-Recall@4 (n=7) 0.929 → **1.000**, Precision@4 **−0.0086** (within HNSW noise),
-Hit@1/MRR/source-accuracy unchanged. 125/125 tests pass.
-
-**Honest caveat:** on this corpus MMR already retrieves both docs for the new
-cross-doc cases — decomposition's measurable benefit is still concentrated on the
-one comparative case. The new classes are **correctness insurance for harder
-corpora**, not a present-day metric win.
-
-**Decision pending:** merge to `main` (accept the −0.0086 precision trade) or
-revert the added cases. See `docs/audit/sprint5x-conjunctive-multipart-report.md`.
+**Why it failed:** a cross-encoder scores each chunk against the *full* question,
+so for comparative/cross-document questions the dominant document's chunks out-rank
+the second document's single relevant chunk — last (post_mmr), as a pre-filter
+(pre_mmr), or fused into MMR's relevance term (mmr_relevance, worst). Deterministic.
+Warm CPU latency was fine (~36 ms); correctness was the blocker. Investigation
+preserved on branch `sprint6-reranker` at `ebec16e`; feature removed at the tip.
+Full record: `docs/audit/sprint6-reranker-report.md`.
 
 ---
 
 ## Planned
 
-### Sprint 6 — Lexical recall (BM25) + hybrid search ⬜
+### Sprint 7 — Lexical recall (BM25) + hybrid search ⬜
 **Why:** dense retrieval saturates recall but misses exact terms/identifiers
 (`db-03` "B-tree index" lands at rank 2–3). **Plan:** add a BM25 lexical scorer,
 fuse with dense via reciprocal-rank fusion, config-gated + benchmarked exactly
 like Sprint 5 (remove if it doesn't beat current numbers). **Prereq:** corpus
 hygiene — delete the 3 synthetic hash-prefixed PDFs and index the real textbooks
 into production `chroma_db/` so production matches the benchmark corpus.
-
-### Sprint 7 — Cross-encoder reranking ⬜
-Precision lift on the final top-k by re-scoring candidates with a cross-encoder.
-Targets the remaining precision/Hit@1 misses on hard single-doc queries.
 
 ### Sprint 8 — Answer-quality evaluation ⬜
 Retrieval metrics don't capture the document-grouped-context improvement. Add a
