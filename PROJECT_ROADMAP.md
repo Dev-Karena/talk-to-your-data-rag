@@ -20,12 +20,11 @@ offline except answer generation. Embeddings: local BGE. Vector DB: ChromaDB.
 | 4 | Retrieval evaluation framework | ✅ Done | `7881641` |
 | 5 | Cross-document retrieval (decomposition) | ✅ Done | `b7abec5` |
 | 5.x | Conjunctive & multi-part decomposition | ✅ Done | `d2beb03` (merged) |
-| 6 | Cross-encoder reranking | 🔶 Implemented, **default OFF** (failed keep-rule) | `sprint6-reranker` (unmerged) |
-| 6.x | Reranking Strategy B (rerank → MMR) | ⬜ Proposed | — |
+| 6 / 6.x | Cross-encoder reranking (3 strategies) | ❌ Investigated & **removed** (failed acceptance) | `sprint6-reranker` (audit only, unmerged) |
 | 7 | Lexical recall (BM25) + hybrid search | ⬜ Planned | — |
 | 8 | Answer-quality evaluation | ⬜ Planned | — |
 
-Legend: ✅ merged to `main` · 🔶 in flight / unmerged · ⬜ not started.
+Legend: ✅ merged to `main` · 🔶 in flight / unmerged · ❌ tried & removed · ⬜ not started.
 
 ---
 
@@ -65,42 +64,30 @@ harder corpora.*
 
 ---
 
-## In flight
+## Recently closed
 
-### Sprint 6 — Cross-encoder reranking 🔶
-**Branch `sprint6-reranker` — implemented, tested (133 passing), default OFF, not
-merged.**
+### Sprint 6 / 6.x — Cross-encoder reranking ❌ removed
+Investigated three MMR + cross-encoder integrations and **removed all of them** —
+none held cross-document Recall@4 = 1.000.
 
-Optional cross-encoder stage after MMR: MMR widens to `RERANKER_TOP_N`, the
-cross-encoder re-scores, then truncate to `top_k`. New `app/services/reranker.py`
-(lazy/cached `CrossEncoder`, device auto-detect `auto|cpu|cuda`, fail-open,
-reorder-only). Knobs `RERANKER_ENABLED|MODEL|DEVICE|TOP_N`. New
-`scripts/eval_reranker.py` (3-way Baseline/MMR/MMR+Reranker + verdict).
-`RERANKER_ENABLED=false` → retrieval byte-identical.
+| Strategy | Hit@1 | MRR | Cross-doc Recall@4 |
+|---|---|---|---|
+| MMR (`main`) | 0.9655 | 0.9770 | **1.0000** |
+| post_mmr (A) | 1.0000 | 1.0000 | 0.9286 ❌ |
+| pre_mmr (B1) | 0.9655 | 0.9828 | 0.9286 ❌ |
+| mmr_relevance (B2) | 0.9310 | 0.9655 | 0.8571 ❌ |
 
-**Benchmark (31 cases, MMR vs MMR+Reranker, ms-marco-MiniLM-L-6-v2):** Hit@1
-0.9655→**1.000**, MRR 0.9770→**1.000**, Source Acc 0.9655→**1.000**, Precision@4
-+0.069 — **but cross-doc Recall@4 1.000→0.9286**. Warm CPU latency median 36.4 ms
-(<150 ms target met).
-
-**Verdict: REMOVE/DISABLE.** The Sprint-6 hard rule requires cross-doc Recall@4 ==
-1.000 exactly; reranking the diverse top-N to top-k by pure relevance collapses
-one cross-doc case. Deterministic, not HNSW noise.
-
-**Decision pending:** (1) merge default-OFF as opt-in, (2) remove entirely
-("no dead config"), or (3) **Sprint 6.x Strategy B** (recommended). See
-`docs/audit/sprint6-reranker-report.md`.
+**Why it failed:** a cross-encoder scores each chunk against the *full* question,
+so for comparative/cross-document questions the dominant document's chunks out-rank
+the second document's single relevant chunk — last (post_mmr), as a pre-filter
+(pre_mmr), or fused into MMR's relevance term (mmr_relevance, worst). Deterministic.
+Warm CPU latency was fine (~36 ms); correctness was the blocker. Investigation
+preserved on branch `sprint6-reranker` at `ebec16e`; feature removed at the tip.
+Full record: `docs/audit/sprint6-reranker-report.md`.
 
 ---
 
 ## Planned
-
-### Sprint 6.x — Reranking Strategy B (rerank → MMR) ⬜
-**Why:** Strategy A (rerank after MMR) wins on Hit@1/MRR but loses cross-doc
-recall. **Plan:** rerank the candidate *pool* first, then let MMR do the final
-diversification to `top_k` — should keep the ranking gain while preserving
-cross-doc Recall@4 = 1.000. Config-gated + benchmarked; keep only if it satisfies
-the Sprint-6 hard rule.
 
 ### Sprint 7 — Lexical recall (BM25) + hybrid search ⬜
 **Why:** dense retrieval saturates recall but misses exact terms/identifiers

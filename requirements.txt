@@ -24,8 +24,6 @@ pypdf==5.1.0                      # Backend used by PyPDFLoader for text extract
 
 # ---- Embeddings: LOCAL default (no API key, runs offline) --------------------
 sentence-transformers==3.3.1      # Local embedding models (e.g. BAAI/bge-small-en-v1.5)
-                                  # Also provides CrossEncoder for the optional
-                                  # Sprint 6 reranker (no extra dependency).
 
 # ---- Configuration & secrets -------------------------------------------------
 python-dotenv==1.0.1              # Load API keys from .env (never hardcode)

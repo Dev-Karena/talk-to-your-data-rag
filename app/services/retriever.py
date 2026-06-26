@@ -107,79 +107,16 @@ def retrieve(question: str, top_k: Optional[int] = None) -> List[RetrievedChunk]
     with sw.stage("search"):
         candidates = _gather_candidates(store, sub_embeddings, fetch_k)
 
-    # 4/5. Diversify with MMR and (optionally) re-rank with a cross-encoder.
-    #      When reranking is disabled, MMR selects k directly and this path is
-    #      byte-identical to the pre-Sprint-6 baseline.
-    if not settings.reranker_enabled:
-        with sw.stage("mmr"):
-            results = _mmr_select(query_embedding, candidates, k, settings.mmr_lambda)
-    else:
-        with sw.stage("rerank"):
-            results = _rerank_and_select(
-                question, query_embedding, candidates, k, settings
-            )
-
+    # 4. Diversify down to k with MMR.
+    with sw.stage("mmr"):
+        results = _mmr_select(query_embedding, candidates, k, settings.mmr_lambda)
     sw.log("retrieve(mmr=on)")
     logger.info(
-        "Retrieved %d chunk(s) (top_k=%d, mmr=on, subq=%d, fetched=%d, sources=%d, "
-        "rerank=%s/%s).",
+        "Retrieved %d chunk(s) (top_k=%d, mmr=on, subq=%d, fetched=%d, sources=%d).",
         len(results), k, len(sub_queries), len(candidates),
-        len({c.source for c in results}), settings.reranker_enabled,
-        settings.reranker_strategy if settings.reranker_enabled else "-",
+        len({c.source for c in results}),
     )
     return results
-
-
-def _minmax(values: List[float]) -> List[float]:
-    """Min-max normalize to ``[0, 1]``; all-equal inputs map to ``1.0``."""
-    lo, hi = min(values), max(values)
-    if hi - lo < 1e-9:
-        return [1.0] * len(values)
-    return [(v - lo) / (hi - lo) for v in values]
-
-
-def _rerank_and_select(
-    question: str,
-    query_embedding: List[float],
-    candidates: List[Tuple[RetrievedChunk, List[float]]],
-    k: int,
-    settings,
-) -> List[RetrievedChunk]:
-    """Combine cross-encoder re-ranking with MMR per ``RERANKER_STRATEGY``.
-
-    Strategies (Sprint 6.x):
-        * ``post_mmr``      — MMR widens to top_n, cross-encoder reorders, truncate
-                              to k. Best ranking; may drop cross-document diversity.
-        * ``pre_mmr``       — cross-encoder reorders the pool, keep top_n, then MMR
-                              selects k. MMR (last) preserves diversity.
-        * ``mmr_relevance`` — cross-encoder scores become the MMR relevance term,
-                              so reranker accuracy and MMR diversity combine.
-
-    Fail-open: if the reranker yields no scores, falls back to plain MMR-to-k.
-    """
-    from app.services.reranker import rerank, rerank_scores
-
-    strategy = settings.reranker_strategy
-    top_n = max(settings.reranker_top_n, k)
-    lam = settings.mmr_lambda
-
-    if strategy == "post_mmr":
-        pool = _mmr_select(query_embedding, candidates, top_n, lam)
-        return rerank(question, pool)[:k]
-
-    chunks_only = [c for c, _ in candidates]
-    scores = rerank_scores(question, chunks_only)
-    if scores is None:  # disabled mid-run or model failure -> plain MMR
-        return _mmr_select(query_embedding, candidates, k, lam)
-
-    if strategy == "pre_mmr":
-        order = sorted(range(len(candidates)), key=lambda i: scores[i], reverse=True)
-        pool = [candidates[i] for i in order][:top_n]
-        return _mmr_select(query_embedding, pool, k, lam)
-
-    # mmr_relevance: use normalized cross-encoder scores as MMR relevance.
-    relevance = _minmax(scores)
-    return _mmr_select(query_embedding, candidates, k, lam, relevance=relevance)
 
 
 def _cosine(a: List[float], b: List[float]) -> float:
@@ -199,46 +136,32 @@ def _mmr_select(
     candidates: List[Tuple[RetrievedChunk, List[float]]],
     k: int,
     lambda_mult: float,
-    relevance: Optional[List[float]] = None,
 ) -> List[RetrievedChunk]:
     """Greedily pick ``k`` chunks balancing relevance and diversity (MMR).
 
     At each step the next chunk maximizes
-    ``lambda * relevance(chunk) - (1 - lambda) * max sim(chunk, already_picked)``.
+    ``lambda * sim(query, chunk) - (1 - lambda) * max sim(chunk, already_picked)``.
     Because chunks from *different* documents are typically dissimilar to each
     other, the diversity term naturally spreads selections across documents.
 
     Args:
-        query_embedding: The embedded query (used for the default relevance term).
+        query_embedding: The embedded query.
         candidates: ``(chunk, embedding)`` pairs, ordered by descending
             similarity to the query (as returned by ``query_candidates``).
         k: Number of chunks to select.
         lambda_mult: MMR trade-off in ``[0, 1]`` (1 = relevance only).
-        relevance: Optional per-candidate relevance scores (aligned to
-            ``candidates``) to use instead of cosine query similarity — this is how
-            the ``mmr_relevance`` strategy injects cross-encoder scores. Defaults
-            to cosine similarity between the query and each candidate.
 
     Returns:
         Up to ``k`` selected chunks in selection order.
     """
     if not candidates:
         return []
-
-    # Relevance term: cross-encoder scores when provided, else cosine to query.
-    query_sim = (
-        relevance if relevance is not None
-        else [_cosine(query_embedding, vec) for _, vec in candidates]
-    )
-
     if k >= len(candidates):
-        # Nothing to prune. With the default relevance, preserve the incoming
-        # (cosine-sorted) order exactly — this keeps the disabled path byte-
-        # identical. With an injected relevance term, order by it.
-        if relevance is None:
-            return [chunk for chunk, _ in candidates]
-        order = sorted(range(len(candidates)), key=lambda i: query_sim[i], reverse=True)
-        return [candidates[i][0] for i in order]
+        # Nothing to prune; preserve the relevance ordering.
+        return [chunk for chunk, _ in candidates]
+
+    # Precompute query relevance for every candidate.
+    query_sim = [_cosine(query_embedding, vec) for _, vec in candidates]
 
     selected_idx: List[int] = []
     remaining = set(range(len(candidates)))

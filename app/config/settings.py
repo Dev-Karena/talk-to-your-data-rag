@@ -172,58 +172,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    # ---- Cross-encoder re-ranking (Sprint 6) ---------------------------------
-    # Optional precision stage that re-scores the MMR-selected candidates with a
-    # cross-encoder, then truncates to top_k. Default OFF -> retrieval output is
-    # byte-identical to the pre-Sprint-6 behavior.
-    reranker_enabled: bool = Field(
-        default=False,
-        validation_alias="RERANKER_ENABLED",
-        description=(
-            "Re-rank the MMR candidates with a cross-encoder before returning "
-            "top_k. Improves ranking quality (Hit@1/MRR). Default OFF."
-        ),
-    )
-    reranker_model: str = Field(
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
-        validation_alias="RERANKER_MODEL",
-        description=(
-            "Any sentence-transformers CrossEncoder model name. Default is the "
-            "CPU-friendly MS-MARCO MiniLM; 'BAAI/bge-reranker-base' is a stronger "
-            "(GPU-class) option. Ignored when RERANKER_ENABLED is false."
-        ),
-    )
-    reranker_device: str = Field(
-        default="auto",
-        validation_alias="RERANKER_DEVICE",
-        description=(
-            "Device for the cross-encoder: 'auto' (CUDA if available, else CPU), "
-            "'cpu', or 'cuda'. No hard CUDA dependency — 'auto' runs on CPU when "
-            "no GPU is present."
-        ),
-    )
-    reranker_top_n: int = Field(
-        default=10,
-        ge=1,
-        validation_alias="RERANKER_TOP_N",
-        description=(
-            "Number of MMR candidates fed to the cross-encoder before truncating "
-            "to top_k. Larger = more candidates re-scored (slower, more thorough)."
-        ),
-    )
-    reranker_strategy: str = Field(
-        default="mmr_relevance",
-        validation_alias="RERANKER_STRATEGY",
-        description=(
-            "How the cross-encoder combines with MMR (Sprint 6.x): "
-            "'post_mmr' (rerank the MMR top-N then truncate — maximizes ranking "
-            "but can drop cross-document diversity), 'pre_mmr' (rerank the pool, "
-            "keep top-N, then MMR — diversity preserved by MMR last), or "
-            "'mmr_relevance' (use cross-encoder scores AS the MMR relevance term, "
-            "so diversity and reranker accuracy combine). Ignored when disabled."
-        ),
-    )
-
     # ---- Vector store (ChromaDB) ---------------------------------------------
     chroma_persist_dir: Path = Field(
         default=Path("./chroma_db"),
@@ -302,29 +250,6 @@ class Settings(BaseSettings):
         if normalized not in {"off", "heuristic", "llm"}:
             raise ValueError(
                 f"QUERY_REWRITE_MODE must be 'off', 'heuristic', or 'llm', got '{value}'."
-            )
-        return normalized
-
-    @field_validator("reranker_device")
-    @classmethod
-    def _validate_reranker_device(cls, value: str) -> str:
-        """Ensure the reranker device is 'auto', 'cpu', or 'cuda'."""
-        normalized = value.strip().lower()
-        if normalized not in {"auto", "cpu", "cuda"}:
-            raise ValueError(
-                f"RERANKER_DEVICE must be 'auto', 'cpu', or 'cuda', got '{value}'."
-            )
-        return normalized
-
-    @field_validator("reranker_strategy")
-    @classmethod
-    def _validate_reranker_strategy(cls, value: str) -> str:
-        """Ensure the reranker strategy is recognized."""
-        normalized = value.strip().lower()
-        if normalized not in {"post_mmr", "pre_mmr", "mmr_relevance"}:
-            raise ValueError(
-                "RERANKER_STRATEGY must be 'post_mmr', 'pre_mmr', or "
-                f"'mmr_relevance', got '{value}'."
             )
         return normalized
 
