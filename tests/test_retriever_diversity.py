@@ -8,7 +8,7 @@ regression, so they are no longer tested here.)
 from __future__ import annotations
 
 from app.rag.vector_store import RetrievedChunk
-from app.services.retriever import _gather_candidates
+from app.services.retriever import _gather_candidates, _minmax, _mmr_select
 
 
 def _rc(source: str, cid: str, score: float = 0.0) -> RetrievedChunk:
@@ -44,3 +44,46 @@ def test_gather_candidates_merges_and_dedupes() -> None:
     shared = next(c for c, _ in out if c.chunk_id == "shared")
     assert shared.score == 0.7
     assert [c.score for c, _ in out] == sorted([c.score for c, _ in out], reverse=True)
+
+
+# ---- Sprint 6.x: MMR relevance override + normalization -------------------
+
+def test_minmax_normalizes_to_unit_range() -> None:
+    assert _minmax([1.0, 3.0, 5.0]) == [0.0, 0.5, 1.0]
+
+
+def test_minmax_all_equal_maps_to_one() -> None:
+    assert _minmax([2.0, 2.0]) == [1.0, 1.0]
+
+
+def test_mmr_relevance_override_changes_ranking() -> None:
+    """With an injected relevance term, MMR ranks by it, not cosine-to-query.
+
+    Two orthogonal-vector chunks: cosine relevance would favor the one aligned
+    with the query, but the override flips the preference.
+    """
+    q = [1.0, 0.0]
+    candidates = [
+        (_rc("A.pdf", "a", 0.9), [1.0, 0.0]),   # high cosine to q
+        (_rc("B.pdf", "b", 0.1), [0.0, 1.0]),   # low cosine to q
+    ]
+    # Default (cosine) relevance -> 'a' first.
+    assert [c.chunk_id for c in _mmr_select(q, candidates, 1, 0.5)] == ["a"]
+    # Override relevance preferring 'b' -> 'b' first.
+    out = _mmr_select(q, candidates, 1, 0.5, relevance=[0.0, 1.0])
+    assert [c.chunk_id for c in out] == ["b"]
+
+
+def test_mmr_relevance_override_preserves_diversity() -> None:
+    """lambda<1 still spreads picks across documents even with injected relevance."""
+    q = [1.0, 0.0]
+    candidates = [
+        (_rc("A.pdf", "a1", 0.9), [1.0, 0.0]),
+        (_rc("A.pdf", "a2", 0.89), [0.99, 0.01]),  # near-duplicate of a1
+        (_rc("B.pdf", "b1", 0.5), [0.0, 1.0]),     # different document
+    ]
+    # All three rank high on the injected relevance, but diversity should still
+    # pull the B-document chunk into the top-2 over the a1/a2 near-duplicate.
+    out = _mmr_select(q, candidates, 2, 0.5, relevance=[1.0, 0.95, 0.9])
+    sources = {c.source for c in out}
+    assert sources == {"A.pdf", "B.pdf"}

@@ -2,9 +2,9 @@
 
 > **Handoff document.** Written for a developer (including future-me) with **no
 > memory of prior work**. Everything needed to continue without re-reading old
-> chats is here. Last updated against commit `97d355f` on branch
-> `sprint5x-conjunctive-multipart` (Sprint 5.x — not yet merged to `main`; `main`
-> tip is `b7abec5`).
+> chats is here. Sprint 5.x is now **merged** to `main` (`d2beb03`). Last updated
+> on branch `sprint6-reranker` (Sprint 6 — cross-encoder re-ranking, implemented
+> default-OFF, **not merged**; did not meet keep-criteria — see Sprint 6 below).
 
 ---
 
@@ -48,7 +48,7 @@
 | `app/ui/` | `streamlit_app.py` (page, sidebar, chat), `components.py` (render helpers). |
 | `app/utils/` | `logger.py` (text/JSON logging + correlation id), `timing.py` (Stopwatch), `metadata_health.py` (integrity checker), `validators.py` (upload validation + content hash). |
 | `scripts/` | Terminal diagnostics & eval (see **Files Added**). |
-| `tests/` | Pytest suite (**125 passing**). Offline; stubs embeddings/LLM. |
+| `tests/` | Pytest suite (**133 passing**). Offline; stubs embeddings/LLM. |
 | `benchmarks/retrieval_cases.yaml` | Labeled benchmark dataset (25 cases). |
 | `docs/audit/` | Per-sprint audit + report docs (the written trail of decisions). |
 | `docs/backlog/`, `docs/evidence/` | Backlog items; generated evidence reports. |
@@ -187,6 +187,26 @@
   classes are **correctness insurance for harder corpora**, not a present-day
   metric win. The guard is what prevents single-doc "...and how is it prevented?"
   questions from over-splitting.
+
+## Sprint 6 — Cross-encoder re-ranking (branch `sprint6-reranker`, NOT merged, default OFF)
+* **Goal:** lift Hit@1 / MRR / Source Accuracy with an optional cross-encoder
+  stage **after** MMR, preserving Recall@4 and cross-document retrieval.
+* **Implemented (config-gated, default OFF):** `app/services/reranker.py`
+  (lazy/cached `CrossEncoder`, device auto-detect `auto|cpu|cuda`, fail-open,
+  reorder-only). `retriever.py` MMR path widens to `RERANKER_TOP_N` then reranks
+  → truncates to `top_k`. New knobs `RERANKER_ENABLED|MODEL|DEVICE|TOP_N`. New
+  `scripts/eval_reranker.py` (3-way Baseline/MMR/MMR+Reranker + verdict).
+* **Benchmark verdict: REMOVE/DISABLE.** Reranker (ms-marco-MiniLM-L-6-v2)
+  improved Hit@1 0.9655→**1.000**, MRR 0.9770→**1.000**, Source Acc
+  0.9655→**1.000**, Precision@4 +0.069 — **but regressed cross-doc Recall@4
+  1.000→0.9286** (one cross-doc case lost its 2nd document). The Sprint-6 hard
+  rule requires cross-doc Recall@4 == 1.000 exactly, so it stays **default OFF**.
+* **Latency:** warm CPU rerank of 10 candidates **median 36.4 ms** (<150 ms
+  target met). No usable GPU here (torch is `+cpu` build; `auto`→cpu).
+* **Lessons:** Reranking the MMR top-N to top-k by *pure relevance* discards MMR's
+  diversity — exactly the predicted cross-doc risk. Deterministic (not HNSW
+  noise). **Mitigation = Strategy B** (rerank pool *then* MMR last) — Phase 3,
+  needs approval. See `docs/audit/sprint6-reranker-report.md`.
 
 ---
 
@@ -380,13 +400,17 @@ the retriever has **no abstention threshold** (always returns top-k).
 
 # Recommended Next Action
 
-**First: decide on Sprint 5.x.** Branch `sprint5x-conjunctive-multipart`
-(`97d355f`) is committed but **not merged**. Review the precision −0.0086
-trade-off (within HNSW noise) and either merge it to `main` or revert the new
-benchmark cases. Then:
+**First: decide on Sprint 6 (reranker) at the merge gate.** Branch
+`sprint6-reranker` is implemented, tested (133 passing), default OFF. The
+benchmark verdict is **REMOVE/DISABLE** (cross-doc Recall@4 1.000→0.9286 fails the
+hard rule, despite Hit@1/MRR/Source-Accuracy gains). Three options:
+  1. **Merge default-OFF** as opt-in (keeps the gains available; documented caveat).
+  2. **Remove entirely** (repo's "no dead config" convention).
+  3. **Sprint 6.x — Strategy B** (rerank pool *then* MMR last) to recover cross-doc
+     recall while keeping the ranking gain — the recommended path; needs approval.
 
-**Start Sprint 6: lexical recall (BM25) + hybrid search** — but first do the
-**5-minute corpus hygiene** that unblocks everything:
+**Then, the longer-standing next step — Sprint 7: lexical recall (BM25) + hybrid
+search** — but first do the **5-minute corpus hygiene** that unblocks everything:
 
 1. Run `python scripts/collision_audit.py`, then **delete the 3 synthetic
    hash-prefixed PDFs** from `documents/` and re-index the **real textbooks** into
@@ -404,13 +428,13 @@ recall; the remaining misses are **exact-term/precision** problems BM25 addresse
 
 # Git Status Recommendation
 
-* **Working tree:** Sprint 5.x committed on branch
-  `sprint5x-conjunctive-multipart` (`97d355f`), **not yet merged or pushed**.
-  `main` tip is `b7abec5`. `SESSION_SUMMARY.md` / `PROJECT_ROADMAP.md` updates are
-  uncommitted on the branch.
-* **To land Sprint 5.x:**
+* **Working tree:** Sprint 5.x is **merged & pushed** to `main` (`d2beb03`).
+  Sprint 6 is on branch `sprint6-reranker` — committed work pending, **not merged**
+  (awaiting the keep/remove/Strategy-B decision above). Per instruction, Sprint 6
+  was **not auto-committed or merged**.
+* **To land Sprint 6 default-OFF (if chosen):**
   ```bash
-  git checkout main && git merge --no-ff sprint5x-conjunctive-multipart
+  git checkout main && git merge --no-ff sprint6-reranker
   git push origin main
   ```
 * **Branches:** `sprint3-4-observability-eval` and `sprint5-retrieval-improvements`
@@ -441,9 +465,11 @@ Sprint 3 added structured logging, timing, and read-only diagnostics; Sprint 4 b
 a real retrieval-evaluation harness with `doc_hash` ground truth and an isolated
 benchmark corpus; Sprint 5 closed the cross-document gap via heuristic query
 decomposition (cross-doc Recall@4 **0.833 → 1.000**, overall Recall@4 **→ 1.000**,
-no regressions). Sprint 5.x (branch, unmerged) extended the rewriter to a 4-class
-classifier (conjunctive + multi-part). `main` is at `b7abec5`; the Sprint 5.x
-branch is `97d355f`; **125 tests pass**.
+no regressions). Sprint 5.x extended the rewriter to a 4-class classifier
+(conjunctive + multi-part) and is **merged** to `main` (`d2beb03`). Sprint 6 added
+an optional cross-encoder reranker (branch `sprint6-reranker`, default OFF) that
+lifted Hit@1/MRR/Source-Accuracy to 1.000 but **regressed cross-doc Recall@4** —
+so it fails the keep-rule and stays disabled pending Strategy B. **133 tests pass.**
 
 **Maturity level.** **Mid/solid.** Production-grade error handling, diagnostics,
 and an automated benchmark put it well past prototype. It is **not yet** advanced
