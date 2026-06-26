@@ -1,5 +1,12 @@
 # Sprint 5 — Retrieval Improvements Report
 
+> **Superseded in part by Sprint 5.x** — see
+> `docs/audit/sprint5x-conjunctive-multipart-report.md`. Sprint 5 shipped
+> **comparative-only** decomposition; Sprint 5.x extends it to a 4-class
+> classifier (adds conjunctive + multi-part) and grows the benchmark to 31 cases.
+> The numbers below are the **25-case Sprint 5** results and remain the record for
+> that milestone.
+
 **Goal:** Improve the benchmark numbers, especially cross-document retrieval.
 **Method:** every lever was implemented behind config, measured with the Sprint-4
 benchmark (before/after on the isolated real-textbook corpus), and **kept only if
@@ -29,10 +36,11 @@ databases" went 0.50 → 1.00) with **zero regression** on any other metric.
 ## What was kept
 
 1. **Heuristic query rewriting** (`QUERY_REWRITE_MODE=off|heuristic|llm`, default
-   `heuristic`). Comparative/conjunctive questions ("compare X with Y", "X versus
-   Y") are decomposed into sub-queries; their candidate pools are unioned (dedup
-   by `chunk_id`, best score) before MMR. Single-intent questions are untouched.
+   `heuristic`). Comparative questions ("compare X with Y", "X versus Y") are
+   decomposed into sub-queries; their candidate pools are unioned (dedup by
+   `chunk_id`, best score) before MMR. Single-intent questions are untouched.
    *Ablation: +0.022 overall recall, +0.167 cross-doc recall, 0 regression.*
+   *(Sprint 5.x later adds conjunctive + multi-part classes — see its report.)*
 2. **Document-grouped context assembly** (`GROUP_CONTEXT_BY_DOCUMENT`, default
    on). Retrieved chunks are grouped under their source document (best document
    first) with a per-document header. This changes only the LLM context layout,
