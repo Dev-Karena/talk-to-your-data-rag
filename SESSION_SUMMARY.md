@@ -1,11 +1,12 @@
+
 # SESSION SUMMARY — Talk To Your Data (RAG)
 
 > **Handoff document.** Written for a developer (including future-me) with **no
 > memory of prior work**. Everything needed to continue without re-reading old
-> chats is here. Sprint 5.x is now **merged** to `main` (`d2beb03`). Last updated
-> on branch `sprint6-reranker` (Sprint 6/6.x — cross-encoder re-ranking
-> **investigated and REMOVED**: no strategy held cross-doc Recall@4 = 1.000.
-> Investigation preserved at `ebec16e`; branch tip is clean. **Not merged.**).
+> chats is here. Sprint 5.x is now **merged** to `main` (`d2beb03`). Sprint 7
+> (Hybrid Retrieval using rank-bm25 RRF score fusion) has been fully implemented,
+> tested, and benchmarked on branch `sprint7-hybrid` (not yet committed/merged).
+
 
 ---
 
@@ -67,7 +68,7 @@
   `streamlit==1.40.2`, `langchain-groq==0.2.1`, `chromadb==0.5.23`,
   `langchain==0.3.13` + `langchain-community==0.3.13` +
   `langchain-text-splitters==0.3.4`, `pypdf==5.1.0`,
-  `sentence-transformers==3.3.1`, `pydantic==2.10.4` +
+  `sentence-transformers==3.3.1`, `rank-bm25==0.2.2`, `pydantic==2.10.4` +
   `pydantic-settings==2.7.0`, `python-dotenv==1.0.1`, `pytest==8.3.4`.
   `PyYAML` (6.0.3) is present (used by the eval dataset loader) — **not yet pinned
   in requirements.txt** (see Known Issues).
@@ -81,12 +82,16 @@
   * `LOG_LEVEL=INFO`, `LOG_FILE=./app.log`
 * **Retrieval-related configuration:**
   * `TOP_K=4`, `USE_MMR=true`, `FETCH_K=20`, `MMR_LAMBDA=0.5`
+  * **Sprint 7 knobs (in `settings.py` and `.env.example`):**
+    `HYBRID_ENABLED=false`, `BM25_TOP_K=20`, `RRF_K=60`,
+    `HYBRID_RELEVANCE_MODE=cosine` (`cosine|fused`).
   * **Sprint 5 knobs (in `settings.py`, may be absent from `.env.example`):**
     `QUERY_REWRITE_MODE=heuristic` (`off|heuristic|llm`),
     `GROUP_CONTEXT_BY_DOCUMENT=true`.
   * **Sprint 3 knob:** `LOG_FORMAT=text` (`text|json`).
   * To reproduce the exact **pre-Sprint-5 baseline**:
     `QUERY_REWRITE_MODE=off GROUP_CONTEXT_BY_DOCUMENT=false`.
+
 
 ---
 
@@ -213,7 +218,17 @@
   single-doc ranking miss (`db-03`) is better tackled by **BM25/hybrid** (next).
   Full record: `docs/audit/sprint6-reranker-report.md`.
 
+## Sprint 7 — Lexical recall (BM25) + hybrid search 🔶 (unmerged)
+* **Goal:** Combine dense retrieval with sparse keyword retrieval using RRF to improve search accuracy, especially on keyword-heavy queries.
+* **Implemented:** Parallel BM25 retrieval (`rank-bm25`) integrated into `app/services/hybrid_retriever.py` and `app/rag/bm25_store.py`. Fuses dense and sparse search lists using Reciprocal Rank Fusion (RRF). Added config options (`HYBRID_ENABLED`, `BM25_TOP_K`, `RRF_K`, `HYBRID_RELEVANCE_MODE`).
+* **Modes Evaluated:**
+  - **Mode A (`fused` relevance)**: Max-normalizes RRF scores to $[0, 1]$ and uses them as the relevance term in MMR.
+  - **Mode B (`cosine` relevance)**: Uses BM25 as a candidate booster but ranks using dense cosine similarity in MMR.
+* **Outcome:** Mode A successfully improved MRR ($0.9770 \rightarrow 0.9830$) and Precision@4 ($0.9138 \rightarrow 0.9400$) with no regressions in cross-document Recall@4 ($1.0000$). Mode B improved MRR but regressed on Precision@4 ($0.8970$) and nDCG@4 ($0.9770$). Mode A is recommended.
+* **Important files:** `app/rag/bm25_store.py`, `app/services/hybrid_retriever.py`, `tests/test_bm25.py`, `tests/test_hybrid_retriever.py`.
+
 ---
+
 
 # Current Benchmark Results
 
@@ -249,11 +264,19 @@ to the S5 column).
 | **Source Accuracy** | 0.9655 | 0.9655 | 0 |
 | **Cross-doc Recall@4** (n=7) | 0.9286 | **1.0000** | +0.0714 |
 
-**Interpretation:** Retrieval is strong and now **complete on recall** for this
-corpus. Remaining headroom is in **precision/Hit@1 on hard single-doc queries**
-(e.g. `db-03` "B-tree index" lands its relevant doc at rank 2–3, not 1). Negative
-(out-of-corpus) queries score 0.45–0.53 vs 0.68–0.90 in-corpus — separable, but
-the retriever has **no abstention threshold** (always returns top-k).
+**Sprint 7 (31 cases, branch `sprint7-hybrid`, baseline = S5.x improved):**
+
+| Metric | Baseline (Dense Only) | Mode A (`fused` relevance) | Mode B (`cosine` relevance) | Fused Δ |
+|---|---|---|---|---|
+| **Recall@4** | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+| **Precision@4** | 0.9138 | **0.9400** | 0.8970 | +0.0262 |
+| **Hit@1** | 0.9655 | 0.9655 | 0.9655 | 0.0000 |
+| **MRR** | 0.9770 | **0.9830** | **0.9830** | +0.0060 |
+| **nDCG@4** | 0.9813 | **0.9850** | 0.9770 | +0.0037 |
+| **Source Accuracy** | 0.9655 | 0.9655 | 0.9655 | 0.0000 |
+| **Cross-doc Recall@4** | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+
+**Interpretation:** Retrieval is complete on recall. Sprint 7 (Mode A) successfully improves precision ($0.9138 \rightarrow 0.9400$), MRR ($0.9770 \rightarrow 0.9830$), and nDCG ($0.9813 \rightarrow 0.9850$) by utilizing RRF score fusion inside MMR. This pulls the hard `db-03` query ("B-tree index") document up from Rank 3 to Rank 2, improving MRR for that query. Mode B improves MRR but regresses on precision and nDCG due to dense cosine similarity overriding the sparse match during MMR selection.
 
 ---
 

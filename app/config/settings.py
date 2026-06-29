@@ -172,6 +172,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ---- Hybrid Retrieval (Sprint 7) -----------------------------------------
+    hybrid_enabled: bool = Field(
+        default=False,
+        validation_alias="HYBRID_ENABLED",
+        description="Whether to combine dense vector search with sparse BM25 search.",
+    )
+    bm25_top_k: int = Field(
+        default=20,
+        ge=1,
+        validation_alias="BM25_TOP_K",
+        description="Number of sparse candidates to fetch per sub-query.",
+    )
+    rrf_k: int = Field(
+        default=60,
+        ge=1,
+        validation_alias="RRF_K",
+        description="RRF constant k parameter.",
+    )
+    hybrid_relevance_mode: str = Field(
+        default="cosine",
+        validation_alias="HYBRID_RELEVANCE_MODE",
+        description="MMR relevance score: 'cosine' (pure dense) or 'fused' (RRF score).",
+    )
+
+
     # ---- Vector store (ChromaDB) ---------------------------------------------
     chroma_persist_dir: Path = Field(
         default=Path("./chroma_db"),
@@ -252,6 +277,18 @@ class Settings(BaseSettings):
                 f"QUERY_REWRITE_MODE must be 'off', 'heuristic', or 'llm', got '{value}'."
             )
         return normalized
+
+    @field_validator("hybrid_relevance_mode")
+    @classmethod
+    def _validate_hybrid_relevance_mode(cls, value: str) -> str:
+        """Ensure the hybrid relevance mode is recognized."""
+        normalized = value.strip().lower()
+        if normalized not in {"cosine", "fused"}:
+            raise ValueError(
+                f"HYBRID_RELEVANCE_MODE must be 'cosine' or 'fused', got '{value}'."
+            )
+        return normalized
+
 
     @model_validator(mode="after")
     def _validate_consistency(self) -> "Settings":

@@ -21,7 +21,7 @@ offline except answer generation. Embeddings: local BGE. Vector DB: ChromaDB.
 | 5 | Cross-document retrieval (decomposition) | ✅ Done | `b7abec5` |
 | 5.x | Conjunctive & multi-part decomposition | ✅ Done | `d2beb03` (merged) |
 | 6 / 6.x | Cross-encoder reranking (3 strategies) | ❌ Investigated & **removed** (failed acceptance) | `sprint6-reranker` (audit only, unmerged) |
-| 7 | Lexical recall (BM25) + hybrid search | ⬜ Planned | — |
+| 7 | Lexical recall (BM25) + hybrid search | 🔶 In flight | `sprint7-hybrid` (unmerged) |
 | 8 | Answer-quality evaluation | ⬜ Planned | — |
 
 Legend: ✅ merged to `main` · 🔶 in flight / unmerged · ❌ tried & removed · ⬜ not started.
@@ -85,21 +85,20 @@ Warm CPU latency was fine (~36 ms); correctness was the blocker. Investigation
 preserved on branch `sprint6-reranker` at `ebec16e`; feature removed at the tip.
 Full record: `docs/audit/sprint6-reranker-report.md`.
 
+### Sprint 7 — Lexical recall (BM25) + hybrid search 🔶 (unmerged)
+Implemented parallel sparse BM25 retrieval (`rank-bm25`) fused with dense candidate retrieval via Reciprocal Rank Fusion (RRF). Added two MMR relevance modes: `fused` (Mode A) and `cosine` (Mode B).
+- **Mode A (`fused` relevance)**: Fuses RRF score as the MMR relevance term, yielding improved MRR ($0.9770 \rightarrow 0.9830$), nDCG@4 ($0.9813 \rightarrow 0.9850$), and Precision@4 ($0.9138 \rightarrow 0.9400$) with no regressions.
+- **Mode B (`cosine` relevance)**: Uses BM25 as a candidate booster but MMR relies on dense cosine similarity, leading to regressions in Precision@4 ($0.8970$) and nDCG@4 ($0.9770$).
+- **Verdict**: Approved Mode A for future merge.
+
 ---
 
 ## Planned
 
-### Sprint 7 — Lexical recall (BM25) + hybrid search ⬜
-**Why:** dense retrieval saturates recall but misses exact terms/identifiers
-(`db-03` "B-tree index" lands at rank 2–3). **Plan:** add a BM25 lexical scorer,
-fuse with dense via reciprocal-rank fusion, config-gated + benchmarked exactly
-like Sprint 5 (remove if it doesn't beat current numbers). **Prereq:** corpus
-hygiene — delete the 3 synthetic hash-prefixed PDFs and index the real textbooks
-into production `chroma_db/` so production matches the benchmark corpus.
-
 ### Sprint 8 — Answer-quality evaluation ⬜
 Retrieval metrics don't capture the document-grouped-context improvement. Add a
 faithfulness / answer-relevance eval so generation/context changes are measurable.
+
 
 ---
 

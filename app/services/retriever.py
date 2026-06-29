@@ -76,6 +76,11 @@ def retrieve(question: str, top_k: Optional[int] = None) -> List[RetrievedChunk]
     settings = get_settings()
     k = top_k if top_k is not None else settings.top_k
 
+    if settings.hybrid_enabled:
+        from app.services.hybrid_retriever import hybrid_retrieve
+        return hybrid_retrieve(question, k)
+
+
     # Time each stage for observability (Sprint 3). Timing does not alter results.
     sw = Stopwatch()
     embedder = get_embedder()
