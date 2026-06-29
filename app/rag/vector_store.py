@@ -319,6 +319,62 @@ class VectorStore:
             "metadatas": list(result.get("metadatas") or []),
         }
 
+    def get_all_chunks(self) -> Tuple[List[str], List[str]]:
+        """Return all chunk texts and their unique ids.
+
+        Returns:
+            Tuple of (texts, ids) lists, aligned by index.
+        """
+        try:
+            result = self._collection.get(include=["documents"])
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Failed to retrieve all chunks: {exc}") from exc
+        return list(result.get("documents") or []), list(result.get("ids") or [])
+
+    def get_chunks_by_ids(
+        self, ids: List[str]
+    ) -> List[Tuple[RetrievedChunk, List[float]]]:
+        """Fetch specific chunks and their embeddings by ID.
+
+        Used to resolve vector representation of chunks retrieved only by sparse search.
+        """
+        if not ids:
+            return []
+        try:
+            result = self._collection.get(
+                ids=ids,
+                include=["documents", "metadatas", "embeddings"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Failed to fetch chunks by IDs: {exc}") from exc
+
+        documents = result.get("documents")
+        if documents is None:
+            documents = []
+        metadatas = result.get("metadatas")
+        if metadatas is None:
+            metadatas = []
+        embeddings = result.get("embeddings")
+        if embeddings is None:
+            embeddings = []
+
+
+        paired: List[Tuple[RetrievedChunk, List[float]]] = []
+        for i, text in enumerate(documents):
+            meta = metadatas[i] or {}
+            vector = list(embeddings[i]) if i < len(embeddings) else []
+            chunk = RetrievedChunk(
+                chunk_id=str(meta.get("chunk_id", "")),
+                text=text or "",
+                source=str(meta.get("source", "unknown")),
+                page_number=int(meta.get("page_number", 0)),
+                chunk_index=int(meta.get("chunk_index", 0)),
+                doc_hash=str(meta.get("doc_hash", "")),
+                score=0.0,
+            )
+            paired.append((chunk, vector))
+        return paired
+
     def count(self) -> int:
         """Return the total number of stored chunks."""
         return self._collection.count()
