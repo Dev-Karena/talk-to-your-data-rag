@@ -39,3 +39,7 @@ pydantic-settings==2.7.0          # .env -> Settings binding
 
 # ---- Testing -----------------------------------------------------------------
 pytest==8.3.4                     # Unit tests in tests/
+
+# ---- Optional Tools (Sprint 10) ----------------------------------------------
+duckduckgo-search==8.1.1          # DuckDuckGo search API wrapper for WebSearchTool
+

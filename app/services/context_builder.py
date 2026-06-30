@@ -26,6 +26,7 @@ from typing import Dict, List
 from app.config.settings import get_settings
 from app.rag.vector_store import RetrievedChunk
 from app.utils.logger import get_logger
+from app.services.context_compressor import compress_chunks
 
 logger = get_logger(__name__)
 
@@ -91,6 +92,13 @@ def build_context(chunks: List[RetrievedChunk]) -> AssembledContext:
     if not chunks:
         logger.info("No chunks to assemble; returning empty context.")
         return AssembledContext(context_text="", citations=[])
+
+    if get_settings().context_compression_enabled:
+        chunks = compress_chunks(chunks)
+        if not chunks:
+            logger.info("No chunks remain after compression; returning empty context.")
+            return AssembledContext(context_text="", citations=[])
+
 
     # Optionally group chunks under their source document (best document first),
     # preserving each chunk's relative order within its document. This only

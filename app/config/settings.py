@@ -196,6 +196,26 @@ class Settings(BaseSettings):
         description="MMR relevance score: 'cosine' (pure dense) or 'fused' (RRF score).",
     )
 
+    # ---- Context Compression (Sprint 9) --------------------------------------
+    context_compression_enabled: bool = Field(
+        default=False,
+        validation_alias="CONTEXT_COMPRESSION_ENABLED",
+        description="Whether to compress retrieved chunks to reduce LLM prompt token size.",
+    )
+
+    # ---- Web Search (Sprint 10) ----------------------------------------------
+    web_search_enabled: bool = Field(
+        default=True,
+        validation_alias="WEB_SEARCH_ENABLED",
+        description="Whether the web search tool is enabled.",
+    )
+    web_search_provider: str = Field(
+        default="duckduckgo",
+        validation_alias="WEB_SEARCH_PROVIDER",
+        description="The web search provider to use.",
+    )
+
+
 
     # ---- Vector store (ChromaDB) ---------------------------------------------
     chroma_persist_dir: Path = Field(

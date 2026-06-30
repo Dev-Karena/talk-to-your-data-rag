@@ -1,0 +1,54 @@
+cases:
+  # Calculator cases
+  - id: calc-01
+    query: "What is 25 * 17?"
+    expected_intent: "calculator"
+    expected_answer_contains: "425"
+  - id: calc-02
+    query: "sqrt(144)"
+    expected_intent: "calculator"
+    expected_answer_contains: "12"
+  - id: calc-03
+    query: "25% of 400"
+    expected_intent: "calculator"
+    expected_answer_contains: "100"
+
+  # DateTime cases
+  - id: date-01
+    query: "What time is it?"
+    expected_intent: "datetime"
+    expected_answer_contains: "2026"
+  - id: date-02
+    query: "what is today's date?"
+    expected_intent: "datetime"
+    expected_answer_contains: "June"
+
+  # Document Stats cases
+  - id: stats-01
+    query: "How many PDFs are indexed?"
+    expected_intent: "document_stats"
+    expected_answer_contains: "DBMS.pdf"
+  - id: stats-02
+    query: "show the corpus stats"
+    expected_intent: "document_stats"
+    expected_answer_contains: "total"
+
+  # Web Search cases
+  - id: web-01
+    query: "Latest news about OpenAI"
+    expected_intent: "web_search"
+    expected_answer_contains: "OpenAI"
+  - id: web-02
+    query: "what is the current weather in Tokyo?"
+    expected_intent: "web_search"
+    expected_answer_contains: "Tokyo"
+
+  # Normal RAG / Knowledge cases
+  - id: rag-01
+    query: "What is supervised learning?"
+    expected_intent: "rag"
+    expected_answer_contains: "labeled"
+  - id: rag-02
+    query: "ACID properties of a transaction"
+    expected_intent: "rag"
+    expected_answer_contains: "durability"
