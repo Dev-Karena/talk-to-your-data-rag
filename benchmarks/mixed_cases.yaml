@@ -1,0 +1,20 @@
+cases:
+  - id: mixed-01
+    query: "What is 25 * 17 and what is supervised learning?"
+    expected_intents: ["calculator", "rag"]
+    expected_answer_contains: ["425", "labeled"]
+
+  - id: mixed-02
+    query: "what is the current time as well as ACID properties of transactions?"
+    expected_intents: ["datetime", "rag"]
+    expected_answer_contains: ["2026", "durability"]
+
+  - id: mixed-03
+    query: "what is 100/4 plus show total documents statistics?"
+    expected_intents: ["calculator", "document_stats"]
+    expected_answer_contains: ["25", "total"]
+
+  - id: mixed-04
+    query: "latest news about OpenAI and virtual memory kernel details"
+    expected_intents: ["web_search", "rag"]
+    expected_answer_contains: ["OpenAI", "kernel"]

@@ -34,6 +34,7 @@ from app.services.context_builder import (
 from app.services.llm_client import LLMError, get_llm_client
 from app.services.retriever import retrieve
 from app.utils.logger import get_logger
+from app.services.answer_generator import AnswerGenerator, AnswerGenerationError
 
 logger = get_logger(__name__)
 
@@ -88,6 +89,7 @@ def _retrieve_and_assemble(question: str, top_k: Optional[int]) -> AssembledCont
     return build_context(chunks)
 
 
+
 def _empty_context_message() -> str:
     """Choose the right 'no answer' message for an empty retrieval result.
 
@@ -120,7 +122,7 @@ def answer_question(question: str, top_k: Optional[int] = None) -> RAGResponse:
         return RAGResponse(answer="Please enter a question.", used_context=False)
 
     # Generation is impossible without an API key — short-circuit before doing any
-    # retrieval work, with a specific, actionable message (not a generic error).
+    # work, with a specific, actionable message.
     if not get_settings().groq_api_key:
         logger.warning("Question received but GROQ_API_KEY is missing; cannot generate.")
         return RAGResponse(
@@ -129,10 +131,23 @@ def answer_question(question: str, top_k: Optional[int] = None) -> RAGResponse:
             error="GROQ_API_KEY is not set.",
         )
 
-    # Retrieval can fail if the store is corrupted or the embedding backend is
-    # unavailable. Catch those so the UI gets a friendly message, not a traceback.
     try:
-        assembled = _retrieve_and_assemble(question, top_k)
+        generator = AnswerGenerator()
+        res = generator.generate(question, top_k=top_k)
+        
+        # If no context was used, answer honestly
+        if not res["used_context"]:
+            return RAGResponse(
+                answer=_empty_context_message(),
+                citations=[],
+                used_context=False,
+            )
+            
+        return RAGResponse(
+            answer=res["answer"],
+            citations=res["citations"],
+            used_context=res["used_context"]
+        )
     except (VectorStoreError, EmbeddingError) as exc:
         logger.error("Retrieval failed: %s", exc)
         return RAGResponse(
@@ -140,32 +155,22 @@ def answer_question(question: str, top_k: Optional[int] = None) -> RAGResponse:
             used_context=False,
             error=str(exc),
         )
-
-    # No relevant context -> answer honestly, skip the LLM call.
-    if assembled.is_empty:
-        logger.info("No context retrieved; returning 'not found' response.")
-        return RAGResponse(
-            answer=_empty_context_message(),
-            citations=[],
-            used_context=False,
-        )
-
-    try:
-        answer = get_llm_client().generate(assembled.context_text, question)
-    except LLMError as exc:
+    except AnswerGenerationError as exc:
         logger.error("Answer generation failed: %s", exc)
         return RAGResponse(
             answer="Sorry, I couldn't generate an answer due to an error.",
-            citations=assembled.citations,
+            citations=exc.citations,
             used_context=True,
             error=str(exc),
         )
-
-    return RAGResponse(
-        answer=answer,
-        citations=assembled.citations,
-        used_context=True,
-    )
+    except Exception as exc:
+        logger.error("Answer generation failed: %s", exc)
+        return RAGResponse(
+            answer="Sorry, I couldn't generate an answer due to an error.",
+            citations=[],
+            used_context=False,
+            error=str(exc),
+        )
 
 
 def answer_question_stream(
@@ -196,22 +201,14 @@ def answer_question_stream(
         return iter([_MISSING_KEY_MESSAGE]), []
 
     try:
-        assembled = _retrieve_and_assemble(question, top_k)
+        generator = AnswerGenerator()
+        stream, citations = generator.generate_stream(question, top_k=top_k)
+        if not citations:
+            return iter([_empty_context_message()]), []
+        return stream, citations
     except (VectorStoreError, EmbeddingError) as exc:
         logger.error("Retrieval failed (stream): %s", exc)
         return iter([_RETRIEVAL_ERROR_MESSAGE]), []
-
-    if assembled.is_empty:
-        return iter([_empty_context_message()]), []
-
-    def _token_stream() -> Iterator[str]:
-        """Yield answer tokens, converting LLM errors into a visible message."""
-        try:
-            yield from get_llm_client().generate_stream(
-                assembled.context_text, question
-            )
-        except LLMError as exc:
-            logger.error("Streaming generation failed: %s", exc)
-            yield f"\n\n[Error generating answer: {exc}]"
-
-    return _token_stream(), assembled.citations
+    except Exception as exc:
+        logger.error("Streaming generation failed: %s", exc)
+        return iter([f"\n\n[Error generating answer: {exc}]"]), []
