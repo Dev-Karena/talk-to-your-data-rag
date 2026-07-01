@@ -66,6 +66,7 @@ htmlcov/
 # Evaluation artifacts
 docs/
 SESSION_SUMMARY.md
+PROJECT_STATUS.md
 reports/
 
 docs/eval/*.json

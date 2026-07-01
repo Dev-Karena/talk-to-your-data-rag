@@ -96,6 +96,17 @@ def render_citations(citations: List[SourceCitation]) -> None:
 
     st.markdown("#### 📎 Sources")
     for citation in citations:
+        if getattr(citation, "is_tool", False):
+            title = f"🛠️ Tool Used: {citation.source}"
+            with st.expander(title, expanded=False):
+                st.markdown(
+                    f"**Tool:** {citation.source}  \n"
+                    f"**Chunk ID:** `{citation.chunk_id}`"
+                )
+                st.markdown("**Output / Result:**")
+                st.write(citation.text)
+            continue
+
         score_pct = f"{citation.score * 100:.0f}%"
         title = f"[Source {citation.index}] {citation.label} — relevance {score_pct}"
         with st.expander(title, expanded=False):

@@ -39,11 +39,24 @@ class AnswerGenerator:
         """
         assembled = self.assembler.assemble(question, top_k=top_k)
         
+        # Check if empty context/no tools
         if not assembled["context_text"] and not assembled["citations"]:
             return {
                 "answer": "No relevant context or tools were triggered to answer this question.",
                 "citations": [],
                 "used_context": False
+            }
+
+        # Short-circuit pure tool queries (ISSUE 3)
+        successful_tools = [r for r in assembled["tool_results"] if r.get("success", False)]
+        has_docs = assembled.get("has_document_context", False)
+        
+        if successful_tools and not has_docs:
+            tool_answer = "\n\n".join(t["content"] for t in successful_tools)
+            return {
+                "answer": tool_answer,
+                "citations": assembled["citations"],
+                "used_context": True
             }
 
         llm_client = _get_llm_client()
@@ -67,6 +80,14 @@ class AnswerGenerator:
         if not assembled["context_text"] and not assembled["citations"]:
             empty_msg_iter = iter(["No relevant context or tools were triggered to answer this question."])
             return empty_msg_iter, []
+
+        # Short-circuit pure tool queries (ISSUE 3)
+        successful_tools = [r for r in assembled["tool_results"] if r.get("success", False)]
+        has_docs = assembled.get("has_document_context", False)
+        
+        if successful_tools and not has_docs:
+            tool_answer = "\n\n".join(t["content"] for t in successful_tools)
+            return iter([tool_answer]), assembled["citations"]
 
         llm_client = _get_llm_client()
 
