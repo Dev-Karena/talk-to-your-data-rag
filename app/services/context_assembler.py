@@ -98,7 +98,12 @@ class ContextAssembler:
             content = t_res.get("content", "")
             data = t_res.get("data")
 
-            tool_context_lines.append(f"[Tool: {tool_name}]\n{content}")
+            tool_context_lines.append(
+                f"### TOOL RESULT ###\n"
+                f"Tool: {tool_name}\n"
+                f"Answer:\n"
+                f"{content}"
+            )
 
             # Generate mock SourceCitations for the UI to display tool results
             if tool_name == "web_search" and isinstance(data, list):
@@ -113,7 +118,8 @@ class ContextAssembler:
                         chunk_index=curr_cit_index,
                         chunk_id=f"web_search::{curr_cit_index}",
                         score=1.0,
-                        text=f"{title}\n{snippet}"
+                        text=f"{title}\n{snippet}",
+                        is_tool=True
                     ))
                     curr_cit_index += 1
             else:
@@ -124,7 +130,8 @@ class ContextAssembler:
                     chunk_index=1,
                     chunk_id=f"{tool_name}::{curr_cit_index}",
                     score=1.0,
-                    text=content
+                    text=content,
+                    is_tool=True
                 ))
                 curr_cit_index += 1
 
@@ -143,5 +150,6 @@ class ContextAssembler:
         return {
             "context_text": combined_context_text,
             "citations": combined_citations,
-            "tool_results": tool_results
+            "tool_results": tool_results,
+            "has_document_context": bool(assembled_rag.context_text.strip())
         }

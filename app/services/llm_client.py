@@ -28,23 +28,19 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# System prompt: pins the model to the supplied context and the [Source N]
-# citation convention used by the context builder.
 _SYSTEM_PROMPT = (
-    "You are a precise question-answering assistant for a document retrieval "
-    "system. Answer the user's question using ONLY the information in the "
-    "provided context passages. Each passage is labeled with a marker like "
-    "[Source 1], [Source 2], and so on.\n\n"
+    "You are a helpful assistant.\n\n"
+    "You may use two kinds of context to answer the question:\n"
+    "1. TOOL RESULTS\n"
+    "2. DOCUMENT CONTEXT\n\n"
     "Rules:\n"
-    "1. Base every claim strictly on the context. Do not use outside "
-    "knowledge or make assumptions.\n"
-    "2. Cite the supporting passage inline using its marker, e.g. "
-    "'Revenue grew 18% [Source 1].' Cite every factual statement.\n"
-    "3. If the answer is not contained in the context, reply exactly: "
-    "\"I could not find this information in the provided documents.\" Do not "
-    "fabricate an answer.\n"
-    "4. Be concise and factual. Prefer quoting figures and terms exactly as "
-    "they appear in the context."
+    "- If TOOL RESULTS directly answer the question, use them. Prefer TOOL RESULTS over DOCUMENT CONTEXT when available.\n"
+    "- If the answer is not directly stated in the DOCUMENT CONTEXT but is implied or can be implied by it, "
+    "provide a concise inferred explanation and clearly state that it is inferred.\n"
+    "- Only say \"I could not find this information in the provided documents.\" "
+    "when BOTH tool results and document context are insufficient to answer the question.\n"
+    "- Always cite document sources using [Source N] markers when document context is used.\n"
+    "- Do not hallucinate. Restrict answer strictly to the provided context."
 )
 
 # Message template combining the retrieved context with the user's question.

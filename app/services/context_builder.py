@@ -52,10 +52,13 @@ class SourceCitation:
     chunk_id: str
     score: float
     text: str
+    is_tool: bool = False
 
     @property
     def label(self) -> str:
         """Short human-readable label, e.g. ``report.pdf · p.4 · chunk 12``."""
+        if self.is_tool:
+            return f"Tool Used: {self.source}"
         return f"{self.source} · p.{self.page_number} · chunk {self.chunk_index}"
 
 
